@@ -78,7 +78,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// app.get("/demouser", async (req,res)=>{
+// HOME ROUTE
+
+app.get("/", (req, res) => {
+
+  res.redirect("/listings");
+
+});
+
+
+ //app.get("/demouser", async (req,res)=>{
 //   let fakeUser = new User({
 //     email: "student@gmail.com",
 //     username: 'delta-student'
@@ -132,3 +141,4 @@ app.use((err, req, res, next) => {
 app.listen(8080, () => {
   console.log("Server running on port 8080");
 });
+
