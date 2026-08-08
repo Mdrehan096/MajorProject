@@ -25,8 +25,7 @@ const userRouter = require("./routes/user.js");
 //Config
 //const MONGO_URL = "mongodb://127.0.0.1:27017/wanderlust";
 
-const db = process.env.ATLASDB_URL;
-console.log("DB URL =", process.env.ATLASDB_URL);
+
 
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -37,27 +36,29 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
 
+const db = process.env.ATLASDB_URL;
+
 const store = MongoStore.create({
-  mongoUrl: db,
-  crypto: {
-    secret: process.env.SECRET,
-  },
-  touchAfter: 24 * 3600,
+    mongoUrl: db,
+    crypto: {
+        secret: process.env.SECRET,
+    },
+    touchAfter: 24 * 3600,
 });
 
-store.on("error", ()=>{
-  console.log("error in MONGO SESSION STORE", err);
+store.on("error", (err) => {
+    console.log("Error in MONGO SESSION STORE:", err);
 });
 
 const sessionOptions = {
-  store,
-  secret: "process.env.SECRET",
-  resave: false,
-  saveUninitialized: false, // better practice
-  cookie: {
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  },
+    store,
+    secret: process.env.SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
 };
 
 
