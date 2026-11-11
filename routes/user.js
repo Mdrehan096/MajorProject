@@ -2,7 +2,11 @@ const express = require("express");
 const router = express.Router();
 const wrapAsync = require("../utils/wrapAsync.js");
 const passport = require("passport");
-const { saveRedirectUrl, validateSignup } = require("../middleware.js");
+const {
+  saveRedirectUrl,
+  validateSignup,
+  validateLogin,
+} = require("../middleware");
 
 const userController = require("../controllers/users.js");
 
@@ -15,16 +19,7 @@ router
   .route("/login")
   .get(userController.renderLoginForm)
   .post(
-    (req, res, next) => {
-      if (
-        typeof req.body?.username !== "string" ||
-        typeof req.body?.password !== "string"
-      ) {
-        req.flash("error", "Invalid username or password format.");
-        return res.redirect("/login");
-      }
-      next();
-    },
+    validateLogin,
     saveRedirectUrl,
     passport.authenticate("local", {
       failureRedirect: "/login",

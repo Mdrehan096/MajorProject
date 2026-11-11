@@ -5,7 +5,7 @@ const {
   validateReview,
   isLoggedIn,
   isReviewAuthor,
-} = require("../middleware.js");
+} = require("../middleware");
 
 const reviewController = require("../controllers/reviews.js");
 

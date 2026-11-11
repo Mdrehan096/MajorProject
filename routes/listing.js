@@ -7,7 +7,7 @@ const {
   validateListing,
   uploadListingImage,
   verifyCsrf,
-} = require("../middleware.js");
+} = require("../middleware");
 
 const listingController = require("../controllers/listings.js");
 
