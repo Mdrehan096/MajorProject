@@ -10,9 +10,11 @@
       class="needs-validation"
       enctype="multipart/form-data"
     >
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
       <div class="mb-3">
         <label for="title" class="form-label">Title</label>
         <input
+          id="title"
           name="listing[title]"
           placeholder="Add a cachy title"
           type="text"
@@ -25,6 +27,7 @@
       <div class="mb-3">
         <label for="description" class="form-label">Description</label>
         <textarea
+          id="description"
           name="listing[description]"
           placeholder="Enter description"
           class="form-control"
@@ -37,8 +40,10 @@
         <div class="mb-3">
         <label for="image" class="form-label">Upload listing Image</label>
         <input
+          id="image"
           name="listing[image]"
           type="file"
+          accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
           class="form-control"
           required
         />
@@ -48,10 +53,12 @@
         <div class="mb-3 col-md-4">
           <label for="price" class="form-label">Price</label>
           <input
+            id="price"
             name="listing[price]"
             placeholder="1200"
             class="form-control"
             type="number"
+            min="0"
             required
           />
           <div class="invalid-feedback">price should be valid</div>
@@ -60,6 +67,7 @@
         <div class="mb-3 col-md-8">
           <label for="country" class="form-label">Country</label>
           <input
+            id="country"
             name="listing[country]"
             placeholder="India"
             type="text"
@@ -73,6 +81,7 @@
       <div class="mb-3">
         <label for="location" class="form-label">Location</label>
         <input
+          id="location"
           name="listing[location]"
           placeholder="jaipur, Rajasthan"
           type="text"

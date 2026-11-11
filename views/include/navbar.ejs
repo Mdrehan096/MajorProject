@@ -54,7 +54,10 @@
         <a class="nav-link" href="/login"><B>log in</B></a>
         <% } %>
         <% if(currUser){ %>
-        <a class="nav-link" href="/logout"><b>log out</b></a>
+        <form action="/logout" method="POST" class="d-flex align-items-center">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+          <button type="submit" class="nav-link btn btn-link border-0" style="text-decoration: none;"><b>log out</b></button>
+        </form>
         <% } %>
       </div>
     </div>
