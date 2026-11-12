@@ -51,6 +51,34 @@
   const resolvedCategory = typeof categoryMeta !== "undefined" ? categoryMeta : null;
   const hostUsername = listing.owner?.username || "Unknown User";
   const hasImageUrl = Boolean(listing.image?.url && String(listing.image.url).trim());
+
+  const resolvedMaxGuests =
+    typeof maxGuests === "number" && Number.isInteger(maxGuests) && maxGuests >= 1
+      ? maxGuests
+      : 8;
+  const resolvedTodayStr =
+    typeof todayStr === "string" && todayStr
+      ? todayStr
+      : new Date().toISOString().slice(0, 10);
+  const resolvedBlockedDates =
+    typeof blockedDates !== "undefined" && Array.isArray(blockedDates)
+      ? blockedDates
+      : [];
+  const resolvedAvailability =
+    typeof availabilityCheck !== "undefined" && availabilityCheck
+      ? availabilityCheck
+      : {
+          checked: false,
+          valid: null,
+          available: null,
+          checkIn: "",
+          checkOut: "",
+          nights: resolvedPricing.nights,
+          guests: 1,
+          maxGuests: resolvedMaxGuests,
+          error: "",
+          message: "",
+        };
 %>
 
 <script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
@@ -63,6 +91,15 @@
     maxStayNights: resolvedPricing.maxStayNights,
     taxRatePercent: resolvedPricing.taxRatePercent,
     taxLabel: resolvedPricing.taxLabel,
+  }) %>;
+  const availabilityPreviewData = <%- safeJson({
+    listingId: String(listing._id),
+    todayStr: resolvedTodayStr,
+    maxGuests: resolvedMaxGuests,
+    maxStayNights: resolvedPricing.maxStayNights,
+    isPriceAvailable: resolvedPricing.isPriceAvailable,
+    blockedDates: resolvedBlockedDates,
+    initialCheck: resolvedAvailability,
   }) %>;
 </script>
 
@@ -193,12 +230,20 @@
                 </strong>
               </div>
             </div>
+            <div class="col-6">
+              <div class="border rounded-3 p-3 h-100 bg-light">
+                <span class="text-muted small d-block">Guest Capacity</span>
+                <strong id="listingMaxGuestsValue">
+                  Up to <%= resolvedMaxGuests %> <%= resolvedMaxGuests === 1 ? "guest" : "guests" %>
+                </strong>
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- Right Column: Configurable Pricing & Estimated Tax Breakdown -->
+        <!-- Right Column: Availability Checker, Configurable Pricing & Estimated Tax Breakdown -->
         <div class="col-12 col-lg-5">
-          <aside class="pricing-card p-3 p-md-4" aria-label="Estimated price breakdown">
+          <aside class="pricing-card p-3 p-md-4" aria-label="Availability and estimated price breakdown">
             <% if (resolvedPricing.isPriceAvailable) { %>
               <div class="d-flex justify-content-between align-items-baseline border-bottom pb-3 mb-3">
                 <div>
@@ -206,14 +251,153 @@
                   <span class="text-muted">/ night</span>
                   <div class="small text-muted">Base nightly rate (before taxes)</div>
                 </div>
-                <span class="badge text-bg-light border">Reference Estimate</span>
+                <span id="listingMaxGuestsBadge" class="badge text-bg-light border">
+                  Max <%= resolvedMaxGuests %> <%= resolvedMaxGuests === 1 ? "guest" : "guests" %>
+                </span>
+              </div>
+            <% } else { %>
+              <div class="text-center pb-3 mb-3 border-bottom">
+                <i class="fa-solid fa-tag text-muted fs-3 mb-2" aria-hidden="true"></i>
+                <h3 class="h6 fw-semibold mb-1">Price currently unavailable</h3>
+                <p class="small text-muted mb-2">
+                  A valid nightly rate is not configured for this listing. Check back later for updated pricing.
+                </p>
+                <span id="listingMaxGuestsBadge" class="badge text-bg-light border">
+                  Max <%= resolvedMaxGuests %> <%= resolvedMaxGuests === 1 ? "guest" : "guests" %>
+                </span>
+              </div>
+            <% } %>
+
+            <!-- Phase 4.3: Date & Guest Availability Interface -->
+            <section id="availabilityPanel" class="mb-3" aria-label="Check stay availability">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 fw-semibold mb-0">Check availability</h3>
+                <span class="small text-muted">Live check</span>
               </div>
 
               <form
                 method="GET"
                 action="/listings/<%= listing._id %>"
+                id="availabilityCheckForm"
+                class="row g-2 mb-2"
+                novalidate
+              >
+                <div class="col-6">
+                  <label for="availabilityCheckIn" class="form-label small fw-semibold mb-1">
+                    Check-in
+                  </label>
+                  <input
+                    id="availabilityCheckIn"
+                    name="checkIn"
+                    type="date"
+                    min="<%= resolvedTodayStr %>"
+                    value="<%= resolvedAvailability.checkIn || '' %>"
+                    class="form-control form-control-sm"
+                    aria-describedby="availabilityFeedback"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label for="availabilityCheckOut" class="form-label small fw-semibold mb-1">
+                    Check-out
+                  </label>
+                  <input
+                    id="availabilityCheckOut"
+                    name="checkOut"
+                    type="date"
+                    min="<%= resolvedTodayStr %>"
+                    value="<%= resolvedAvailability.checkOut || '' %>"
+                    class="form-control form-control-sm"
+                    aria-describedby="availabilityFeedback"
+                    required
+                  />
+                </div>
+                <div class="col-12">
+                  <label for="availabilityGuests" class="form-label small fw-semibold mb-1">
+                    Guests
+                  </label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input
+                      id="availabilityGuests"
+                      name="guests"
+                      type="number"
+                      min="1"
+                      max="<%= resolvedMaxGuests %>"
+                      step="1"
+                      value="<%= resolvedAvailability.guests || 1 %>"
+                      class="form-control form-control-sm"
+                      aria-describedby="availabilityGuestsHelp availabilityFeedback"
+                      required
+                    />
+                    <span id="availabilityGuestsHelp" class="small text-muted text-nowrap">
+                      Max <%= resolvedMaxGuests %>
+                    </span>
+                  </div>
+                </div>
+                <div class="col-12 mt-2">
+                  <button
+                    id="checkAvailabilityBtn"
+                    type="submit"
+                    class="btn btn-dark btn-sm w-100 py-2"
+                  >
+                    Check Availability
+                  </button>
+                </div>
+              </form>
+
+              <%
+                let feedbackClass = "alert d-none py-2 px-3 small mb-3";
+                let feedbackText = "";
+                if (resolvedAvailability.checked) {
+                  if (!resolvedAvailability.valid) {
+                    feedbackClass = "alert alert-danger py-2 px-3 small mb-3";
+                    feedbackText = resolvedAvailability.error || "Invalid dates selected.";
+                  } else if (resolvedAvailability.available === true) {
+                    feedbackClass = "alert alert-success py-2 px-3 small mb-3";
+                    feedbackText = resolvedAvailability.message;
+                  } else if (resolvedAvailability.available === false) {
+                    feedbackClass = "alert alert-warning py-2 px-3 small mb-3";
+                    feedbackText = resolvedAvailability.message;
+                  }
+                }
+              %>
+              <div
+                id="availabilityFeedback"
+                class="<%= feedbackClass %>"
+                role="status"
+                aria-live="polite"
+              ><%= feedbackText %></div>
+
+              <div id="blockedDatesSection" class="blocked-dates-box p-2 p-md-3 rounded-3 bg-light border">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="small fw-semibold text-dark">Upcoming unavailable dates</span>
+                  <span class="text-muted" style="font-size: 0.72rem;">Check-out day is open</span>
+                </div>
+                <div id="blockedDatesContainer">
+                  <% if (resolvedBlockedDates.length > 0) { %>
+                    <ul id="blockedDatesList" class="blocked-dates-list list-unstyled mb-0 mt-2">
+                      <% for (let slot of resolvedBlockedDates.slice(0, 8)) { %>
+                        <li class="blocked-date-item d-flex justify-content-between align-items-center small py-1">
+                          <span><%= slot.checkIn %> &rarr; <%= slot.checkOut %></span>
+                          <span class="badge text-bg-secondary-subtle border text-secondary-emphasis">Unavailable</span>
+                        </li>
+                      <% } %>
+                    </ul>
+                  <% } else { %>
+                    <p id="blockedDatesEmpty" class="small text-muted mb-0 mt-1">
+                      No upcoming unavailable dates.
+                    </p>
+                  <% } %>
+                </div>
+              </div>
+            </section>
+
+            <% if (resolvedPricing.isPriceAvailable) { %>
+              <form
+                method="GET"
+                action="/listings/<%= listing._id %>"
                 id="stayPricingForm"
-                class="mb-3"
+                class="mb-3 pt-2 border-top"
                 novalidate
               >
                 <label for="stayNightsInput" class="form-label small fw-semibold mb-1">
@@ -270,16 +454,8 @@
               </div>
 
               <p class="small text-muted mb-0 mt-3 pt-2 border-top" style="font-size: 0.78rem;">
-                <%= resolvedPricing.disclaimer %>
+                <%= resolvedPricing.disclaimer %> Availability previews are verified atomically on the server during booking.
               </p>
-            <% } else { %>
-              <div class="text-center py-3">
-                <i class="fa-solid fa-tag text-muted fs-3 mb-2" aria-hidden="true"></i>
-                <h3 class="h6 fw-semibold mb-1">Price currently unavailable</h3>
-                <p class="small text-muted mb-0">
-                  A valid nightly rate is not configured for this listing. Check back later for updated pricing.
-                </p>
-              </div>
             <% } %>
           </aside>
         </div>

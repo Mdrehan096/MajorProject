@@ -202,7 +202,7 @@ function delay(ms) {
 async function runBookingTransactionWithRetry(work, maxRetriesInput) {
   const configuredMax = env.booking?.maxTxRetries || 4;
   const maxAttempts =
-    Number.isInteger(maxRetriesInput) && maxRetriesInput >= 1 && maxRetriesInput <= 10
+    Number.isInteger(maxRetriesInput) && maxRetriesInput >= 1 && maxRetriesInput <= 20
       ? maxRetriesInput
       : configuredMax;
 
@@ -214,7 +214,7 @@ async function runBookingTransactionWithRetry(work, maxRetriesInput) {
         writeConcern: { w: "majority" },
       });
 
-      const result = await work(session);
+      const result = await work(session, attempt);
 
       while (true) {
         try {
@@ -237,10 +237,19 @@ async function runBookingTransactionWithRetry(work, maxRetriesInput) {
         await session.abortTransaction().catch(() => {});
       }
 
-      if (attempt < maxAttempts && isTransientTransactionError(err)) {
-        const jitterMs = Math.min(25 * 2 ** (attempt - 1) + Math.floor(Math.random() * 25), 350);
-        await delay(jitterMs);
-        continue;
+      if (isTransientTransactionError(err)) {
+        if (attempt < maxAttempts) {
+          const jitterMs = Math.min(
+            35 * 2 ** (attempt - 1) + Math.floor(Math.random() * 65),
+            600
+          );
+          await delay(jitterMs);
+          continue;
+        }
+        throw new ExpressError(
+          409,
+          "High booking activity on this listing right now. Please try again."
+        );
       }
       throw err;
     } finally {
@@ -445,7 +454,30 @@ async function createBooking(listingId, payload, options = {}) {
     }
   );
 
-  return runBookingTransactionWithRetry(async (session) => {
+  const effectiveMaxRetries =
+    maxRetries !== undefined
+      ? maxRetries
+      : Math.max(env.booking?.maxTxRetries || 4, 8);
+
+  return runBookingTransactionWithRetry(async (session, attempt) => {
+    // On retry after concurrent write contention, check committed bookings in the
+    // refreshed snapshot before taking the per-listing write lock again.
+    if (attempt > 1) {
+      const earlyConflict = await Booking.findOne({
+        listing: listingId,
+        status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+        checkIn: { $lt: checkOut },
+        checkOut: { $gt: checkIn },
+      }).session(session);
+
+      if (earlyConflict) {
+        throw new ExpressError(
+          409,
+          "Selected dates are no longer available for this listing."
+        );
+      }
+    }
+
     // Acquire an exclusive per-listing write lock before reading availability
     // to eliminate WiredTiger snapshot phantom write-skew under concurrent requests.
     const listing = await Listing.findOneAndUpdate(
@@ -522,7 +554,23 @@ async function createBooking(listingId, payload, options = {}) {
 
     await newBooking.save({ session });
     return newBooking;
-  }, maxRetries);
+  }, effectiveMaxRetries);
+}
+
+async function hasUpcomingActiveBookings(listingId, options = {}) {
+  validateObjectId(listingId, "Listing ID");
+  const resolvedOpts = validateOptions(
+    options,
+    new Set(["now"]),
+    "active bookings lookup options"
+  );
+  const todayUtc = getTodayUtcMidnight(resolvedOpts.now);
+  const active = await Booking.exists({
+    listing: listingId,
+    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+    checkOut: { $gt: todayUtc },
+  });
+  return Boolean(active);
 }
 
 async function findBookingById(bookingId, options = {}) {
@@ -866,6 +914,7 @@ module.exports = {
   calculateBookingPrice,
   checkAvailability,
   getListingBlockedDates,
+  hasUpcomingActiveBookings,
   createBooking,
   findBookingById,
   getGuestBookings,

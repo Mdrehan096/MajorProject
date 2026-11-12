@@ -254,6 +254,15 @@ body {
   top: 6rem;
 }
 
+.blocked-dates-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.blocked-date-item + .blocked-date-item {
+  border-top: 1px solid #e9ecef;
+}
+
 @media (max-width: 991.98px) {
   .pricing-card {
     position: static;

@@ -25,6 +25,12 @@ router
 // New Route
 router.get("/new", isLoggedIn, listingController.renderNewForm);
 
+// Public Availability Check Route (Phase 4.3)
+router.get(
+  "/:id/availability",
+  wrapAsync(listingController.checkListingAvailability)
+);
+
 router
   .route("/:id")
   .get(wrapAsync(listingController.showListing))

@@ -32,6 +32,29 @@ module.exports.showListing = async (req, res) => {
   res.render("listings/show.ejs", details);
 };
 
+module.exports.checkListingAvailability = async (req, res, next) => {
+  try {
+    const availability = await listingService.getListingAvailability(
+      req.params.id,
+      req.query
+    );
+    return res.status(200).json(availability);
+  } catch (err) {
+    if (
+      err &&
+      Number.isInteger(err.statusCode) &&
+      err.statusCode >= 400 &&
+      err.statusCode < 500
+    ) {
+      return res.status(err.statusCode).json({
+        available: false,
+        error: err.message,
+      });
+    }
+    return next(err);
+  }
+};
+
 module.exports.createListing = async (req, res) => {
   try {
     await listingService.createListing(req.body?.listing, {
