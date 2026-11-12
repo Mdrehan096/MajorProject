@@ -20,7 +20,10 @@ module.exports.renderNewForm = (req, res) => {
 };
 
 module.exports.showListing = async (req, res) => {
-  const details = await listingService.getListingDetails(req.params.id);
+  const details = await listingService.getListingDetails(
+    req.params.id,
+    req.query
+  );
   if (!details) {
     req.flash("error", "Listing you requested for does not exist");
     return res.redirect("/listings");

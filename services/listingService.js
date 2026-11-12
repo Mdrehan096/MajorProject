@@ -1,8 +1,14 @@
 const mongoose = require("mongoose");
 const Listing = require("../models/listing");
 const ExpressError = require("../utils/ExpressError.js");
+const { env } = require("../config/env.js");
 const { mapToken, geocodeLocation } = require("../config/mapbox.js");
 const { safeDestroyCloudinaryImage } = require("../utils/cloudinaryCleanup.js");
+const {
+  normalizeStayNights,
+  calculatePriceBreakdown,
+  resolveTaxConfig,
+} = require("../utils/pricing.js");
 const {
   DEFAULT_PAGE,
   DEFAULT_LIMIT,
@@ -393,6 +399,38 @@ function buildOriginalImageUrl(image) {
   return url.replace("/upload", "/upload/w_250");
 }
 
+function computeReviewStats(reviews = []) {
+  const reviewList = Array.isArray(reviews) ? reviews.filter(Boolean) : [];
+  let ratingSum = 0;
+  let ratedCount = 0;
+
+  for (const review of reviewList) {
+    const rawRating = Number(review?.rating);
+    if (Number.isFinite(rawRating) && rawRating >= 1 && rawRating <= 5) {
+      ratingSum += rawRating;
+      ratedCount += 1;
+    }
+  }
+
+  const averageRating =
+    ratedCount > 0 ? Math.round((ratingSum / ratedCount) * 10) / 10 : null;
+
+  return {
+    reviewCount: reviewList.length,
+    ratedCount,
+    averageRating,
+    formattedAverage: averageRating !== null ? averageRating.toFixed(1) : null,
+    hasReviews: reviewList.length > 0,
+  };
+}
+
+function resolveCategoryMeta(categorySlug) {
+  if (typeof categorySlug !== "string" || !categorySlug) {
+    return null;
+  }
+  return LISTING_CATEGORY_MAP.get(categorySlug) || null;
+}
+
 async function getAllListings() {
   return Listing.find({});
 }
@@ -414,6 +452,18 @@ async function searchListings(rawQuery = {}) {
       .limit(filters.limit);
   }
 
+  const pricingConfig = resolveTaxConfig(env.pricing);
+  const pricingByListingId = Object.create(null);
+  for (const listing of listings) {
+    if (listing && listing._id !== undefined && listing._id !== null) {
+      pricingByListingId[String(listing._id)] = calculatePriceBreakdown({
+        nightlyPrice: listing.price,
+        nights: 1,
+        taxConfig: pricingConfig,
+      });
+    }
+  }
+
   return {
     listings,
     filters,
@@ -430,6 +480,8 @@ async function searchListings(rawQuery = {}) {
     },
     categories: LISTING_CATEGORIES,
     sortOptions: SORT_OPTIONS,
+    pricingConfig,
+    pricingByListingId,
   };
 }
 
@@ -447,16 +499,33 @@ async function getListingById(id) {
     .populate("owner", "username");
 }
 
-async function getListingDetails(id) {
+async function getListingDetails(id, rawQuery = {}, options = {}) {
+  validateListingId(id);
+
+  const taxConfig = resolveTaxConfig(options?.taxConfig || env.pricing);
+  const nights = normalizeStayNights(rawQuery, taxConfig.maxStayNights);
+
   const listing = await getListingById(id);
   if (!listing) {
     return null;
   }
 
+  const categoryMeta = resolveCategoryMeta(listing.category);
+  const reviewStats = computeReviewStats(listing.reviews);
+  const pricing = calculatePriceBreakdown({
+    nightlyPrice: listing.price,
+    nights,
+    taxConfig,
+  });
+
   return {
     listing,
     mapListing: buildMapListing(listing),
     mapToken: mapToken || "",
+    categoryMeta,
+    reviewStats,
+    pricing,
+    taxConfig,
   };
 }
 
@@ -628,6 +697,8 @@ module.exports = {
   validateListingId,
   buildMapListing,
   buildOriginalImageUrl,
+  computeReviewStats,
+  resolveCategoryMeta,
   getAllListings,
   searchListings,
   getListingById,

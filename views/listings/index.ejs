@@ -27,6 +27,7 @@
     (activeFilters.sort && activeFilters.sort !== "newest")
   );
   const categoryLabelMap = new Map(categoryList.map((cat) => [cat.slug, cat.label]));
+  const cardPricingMap = typeof pricingByListingId !== "undefined" && pricingByListingId ? pricingByListingId : {};
   const presetLimits = [6, 12, 24, 48];
 %>
 
@@ -143,7 +144,7 @@
       <div class="tax-toggle">
         <div class="form-check-reverse form-switch m-0">
           <input class="form-check-input" type="checkbox" role="switch" id="switchCheckDefault">
-          <label class="form-check-label" for="switchCheckDefault">Display total after taxes</label>
+          <label class="form-check-label" for="switchCheckDefault">Show estimated taxes (GST)</label>
         </div>
       </div>
     </div>
@@ -218,8 +219,27 @@
                 <% if (listing.category && categoryLabelMap.has(listing.category)) { %>
                   <span class="badge text-bg-light border my-1"><%= categoryLabelMap.get(listing.category) %></span><br />
                 <% } %>
-                &#8377; <%= (listing.price ?? 0).toLocaleString("en-IN") %> /night
-                <i class="tax-info"> &nbsp;&nbsp; +18% GST</i>
+                <%
+                  const cardPricing = cardPricingMap[String(listing._id)];
+                  const hasValidPrice = cardPricing
+                    ? cardPricing.isPriceAvailable
+                    : (listing.price !== null && listing.price !== undefined && Number.isFinite(Number(listing.price)) && Number(listing.price) >= 0);
+                %>
+                <% if (hasValidPrice) { %>
+                  &#8377; <%= cardPricing ? cardPricing.formattedBasePrice : Number(listing.price).toLocaleString("en-IN") %> /night
+                  <% if (cardPricing) { %>
+                    <i class="tax-info">
+                      &nbsp;&middot;&nbsp;
+                      <% if (cardPricing.taxRatePercent === 0) { %>
+                        0% <%= cardPricing.taxLabel %> (&#8377;<%= cardPricing.formattedEstimatedNightlyTotal %> est.)
+                      <% } else { %>
+                        +<%= cardPricing.taxRatePercent %>% <%= cardPricing.taxLabel %> (&#8377;<%= cardPricing.formattedEstimatedNightlyTotal %> est.)
+                      <% } %>
+                    </i>
+                  <% } %>
+                <% } else { %>
+                  <span class="text-muted">Price unavailable</span>
+                <% } %>
               </p>
             </div>
           </div>

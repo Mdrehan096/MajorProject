@@ -1,128 +1,424 @@
 <% layout("/layout/boilerplate") %>
-  <% const safeMapData=typeof mapListing !=="undefined" ? mapListing : { title: listing.title, geometry:
-    listing.geometry ? { type: listing.geometry.type, coordinates: Array.isArray(listing.geometry.coordinates) ?
-    listing.geometry.coordinates : [], } : null, }; %>
-    <script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
-      const mapToken = <%- safeJson(typeof mapToken !== "undefined" ? mapToken : "") %>;
-      const mapListing = <%- safeJson(safeMapData) %>;
-    </script>
-    <div class="row mt-2">
-      <div class="col-8 offset-3">
-        <h3>
-          <%= listing.title %>
-        </h3>
-      </div>
+<%
+  const safeMapData = typeof mapListing !== "undefined" && mapListing
+    ? mapListing
+    : {
+        title: listing.title,
+        geometry: listing.geometry
+          ? {
+              type: listing.geometry.type,
+              coordinates: Array.isArray(listing.geometry.coordinates)
+                ? listing.geometry.coordinates
+                : [],
+            }
+          : null,
+      };
 
-      <div class="card col-6 offset-3 show-card listing-card">
-        <img src="<%= listing.image?.url || '' %>" class="card-img-top show-img" alt="listing_image">
-        <div class="card-body">
-          <p class="card-text">Owned by <i>
-              <%= listing.owner?.username || "Unknown User" %>
-            </i> </p>
+  const resolvedReviewStats = typeof reviewStats !== "undefined" && reviewStats
+    ? reviewStats
+    : {
+        reviewCount: Array.isArray(listing.reviews) ? listing.reviews.length : 0,
+        averageRating: null,
+        formattedAverage: null,
+        hasReviews: Array.isArray(listing.reviews) && listing.reviews.length > 0,
+      };
 
+  const resolvedPricing = typeof pricing !== "undefined" && pricing
+    ? pricing
+    : {
+        isPriceAvailable:
+          listing.price !== null &&
+          listing.price !== undefined &&
+          Number.isFinite(Number(listing.price)) &&
+          Number(listing.price) >= 0,
+        nights: 1,
+        maxStayNights: 90,
+        basePrice: Number(listing.price ?? 0),
+        subtotal: Number(listing.price ?? 0),
+        taxRatePercent: 0,
+        taxAmount: 0,
+        estimatedTotal: Number(listing.price ?? 0),
+        taxLabel: "Estimated GST",
+        taxDescription: "Standard estimate",
+        formattedBasePrice: Number(listing.price ?? 0).toLocaleString("en-IN"),
+        formattedSubtotal: Number(listing.price ?? 0).toLocaleString("en-IN"),
+        formattedTaxAmount: "0",
+        formattedEstimatedTotal: Number(listing.price ?? 0).toLocaleString("en-IN"),
+        disclaimer:
+          "Estimated breakdown for reference only. Actual tax applicability and final booking total depend on host GST registration and booking terms.",
+      };
 
-          <p class="card-text">
-            <%= listing.description %>
-          </p>
-          <p class="card-text">&#8377; <%= (listing.price ?? 0).toLocaleString("en-IN") %>
-          </p>
-          <p class="card-text">
-            <%= listing.location %>
-          </p>
-          <p class="card-text">
-            <%= listing.country %>
-          </p>
-        </div>
-      </div>
+  const resolvedCategory = typeof categoryMeta !== "undefined" ? categoryMeta : null;
+  const hostUsername = listing.owner?.username || "Unknown User";
+  const hasImageUrl = Boolean(listing.image?.url && String(listing.image.url).trim());
+%>
 
-      <br />
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+  const mapToken = <%- safeJson(typeof mapToken !== "undefined" ? mapToken : "") %>;
+  const mapListing = <%- safeJson(safeMapData) %>;
+  const pricingPreviewData = <%- safeJson({
+    isPriceAvailable: resolvedPricing.isPriceAvailable,
+    basePrice: resolvedPricing.basePrice,
+    nights: resolvedPricing.nights,
+    maxStayNights: resolvedPricing.maxStayNights,
+    taxRatePercent: resolvedPricing.taxRatePercent,
+    taxLabel: resolvedPricing.taxLabel,
+  }) %>;
+</script>
 
-      <% if(currUser && listing.owner && listing.owner._id.equals(currUser._id)) {%>
-        <div class="btns">
-          <a href="/listings/<%= listing._id %>/edit" class="btn btn-dark col-1 offset-3 edit-btn">Edit</a>
+<div class="container px-0 my-3">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
 
-
-          <form method="POST" action="/listings/<%=listing._id %>?_method=DELETE">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <button class="btn btn-dark  offset-4 ">Delete</button>
-          </form>
-        </div>
+      <!-- Listing Header -->
+      <div class="mb-3">
+        <% if (resolvedCategory) { %>
+          <a
+            href="/listings?category=<%= encodeURIComponent(resolvedCategory.slug) %>"
+            class="badge rounded-pill detail-badge text-decoration-none px-3 py-2 mb-2 d-inline-flex align-items-center gap-2"
+          >
+            <i class="<%= resolvedCategory.icon %>" aria-hidden="true"></i>
+            <span><%= resolvedCategory.label %></span>
+          </a>
         <% } %>
 
+        <h1 class="h2 fw-bold mb-2"><%= listing.title %></h1>
 
+        <div class="d-flex flex-wrap align-items-center gap-3 text-muted small">
+          <span>
+            <i class="fa-solid fa-location-dot text-danger me-1" aria-hidden="true"></i>
+            <%= listing.location %><% if (listing.country) { %>, <%= listing.country %><% } %>
+          </span>
 
-          <div class="col-8 offset-3 mb-3">
+          <span aria-label="Listing rating summary">
+            <% if (resolvedReviewStats.formattedAverage !== null) { %>
+              <i class="fa-solid fa-star text-warning me-1" aria-hidden="true"></i>
+              <strong class="text-dark"><%= resolvedReviewStats.formattedAverage %></strong>
+              &middot; <%= resolvedReviewStats.reviewCount %> <%= resolvedReviewStats.reviewCount === 1 ? "review" : "reviews" %>
+            <% } else { %>
+              <i class="fa-regular fa-star me-1" aria-hidden="true"></i>
+              No reviews yet
+            <% } %>
+          </span>
+        </div>
+      </div>
 
-            <% if(currUser) {%>
-              <hr />
-              <h4>Leave a Review</h4>
-              <form action="/listings/<%= listing._id %>/reviews" method="POST" novalidate class="needs-validation">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <!-- Listing Hero Image + Missing Image Fallback -->
+      <div class="mb-4">
+        <% if (hasImageUrl) { %>
+          <img
+            src="<%= listing.image.url %>"
+            class="show-img"
+            alt="<%= listing.title %>"
+            data-listing-hero-img
+          />
+          <div class="show-img-fallback d-none" data-listing-hero-fallback>
+            <i class="fa-regular fa-image fs-1 mb-2" aria-hidden="true"></i>
+            <p class="fw-semibold mb-1 text-dark">Image preview unavailable</p>
+            <p class="small mb-0">The property image could not be loaded right now.</p>
+          </div>
+        <% } else { %>
+          <div class="show-img-fallback">
+            <i class="fa-regular fa-image fs-1 mb-2" aria-hidden="true"></i>
+            <p class="fw-semibold mb-1 text-dark">No property image uploaded</p>
+            <p class="small mb-0">Host has not provided a listing photo yet.</p>
+          </div>
+        <% } %>
+      </div>
 
-                <!-- <div class="mb-3 my-3">
-          <label for="rating" class="form-label">Rating</label>
-          <input type="range" min="1" max="5" id="rating" name="review[rating]" class="form-range" value="3">
-        </div> -->
+      <!-- Main Two-Column Details & Pricing Breakdown -->
+      <div class="row g-4 align-items-start">
+        <!-- Left Column: Host, Description & Highlights -->
+        <div class="col-12 col-lg-7">
+          <div class="host-summary-card p-3 p-md-4 mb-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <div>
+              <p class="text-muted small mb-1">Host</p>
+              <h2 class="h5 mb-0">
+                Owned by <i>@<%= hostUsername %></i>
+              </h2>
+            </div>
 
-                <div class="mb-3 my-3">
-                  <label for="rating" class="form-label">Rating</label>
-                  <fieldset class="starability-slot">
+            <% if (currUser && listing.owner && listing.owner._id.equals(currUser._id)) { %>
+              <div class="btns">
+                <a
+                  href="/listings/<%= listing._id %>/edit"
+                  class="btn btn-dark edit-btn px-3"
+                >Edit</a>
 
-                    <input type="radio" id="no-rate" class="input-no-rate" name="review[rating]" value="1" checked
-                      aria-label="No rating." />
-                    <input type="radio" id="first-rate1" name="review[rating]" value="1" />
-                    <label for="first-rate1" title="Terrible">1 star</label>
-                    <input type="radio" id="first-rate2" name="review[rating]" value="2" />
-                    <label for="first-rate2" title="Not good">2 stars</label>
-                    <input type="radio" id="first-rate3" name="review[rating]" value="3" />
-                    <label for="first-rate3" title="Average">3 stars</label>
-                    <input type="radio" id="first-rate4" name="review[rating]" value="4" />
-                    <label for="first-rate4" title="Very good">4 stars</label>
-                    <input type="radio" id="first-rate5" name="review[rating]" value="5" />
-                    <label for="first-rate5" title="Amazing">5 stars</label>
-                  </fieldset>
-                </div>
-                <div class="mb-3 my-3">
-                  <label for="comment" class="form-label">Comments</label>
-                  <textarea name="review[comment]" id="comment" cols="50" rows="5" class="form-control"
-                    required></textarea>
-                  <div class="invalid-feedback">please submmit some comments for review </div>
-                </div>
+                <form
+                  method="POST"
+                  action="/listings/<%= listing._id %>?_method=DELETE"
+                  class="m-0"
+                >
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button class="btn btn-outline-dark px-3" type="submit">Delete</button>
+                </form>
+              </div>
+            <% } %>
+          </div>
 
-                <button type="submit" class="btn btn-outline-dark">Submit</button>
-              </form>
-              <% } %>
+          <div class="mb-4">
+            <h3 class="h5 fw-semibold mb-2">About this space</h3>
+            <p class="card-text text-body mb-0" style="white-space: pre-line;"><%= listing.description %></p>
+          </div>
 
-                <% if(listing.reviews.length> 0){%>
-                  <div class="row">
-                    <p><b>All Reviews</b></p>
-                    <% for(let review of listing.reviews){ %>
-                      <div class="card col-5 ms-3 mb-3">
-                        <div class="card-body">
-                          <h5 class="card-title">@<%= review.author?.username || "Unknown User" %>
-                          </h5>
-                          <p class="starability-result card-text" data-rating="<%= review.rating %>"></p>
-                          <p class="card-text">
-                            <%= review.comment %>
-                          </p>
-
-                        </div>
-                        <% if(currUser && review.author && review.author._id.equals(currUser._id)) { %>
-                          <form class="mb-3" method="POST"
-                            action="/listings/<%= listing._id %>/reviews/<%= review._id %>?_method=DELETE">
-                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                            <button class="btn btn-sm btn-dark">Delete</button>
-                          </form>
-                          <% } %>
-                      </div>
-                      <% } %>
-                  </div>
+          <div class="row g-3 mb-4">
+            <div class="col-6">
+              <div class="border rounded-3 p-3 h-100 bg-light">
+                <span class="text-muted small d-block">Location</span>
+                <strong><%= listing.location %></strong>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="border rounded-3 p-3 h-100 bg-light">
+                <span class="text-muted small d-block">Country</span>
+                <strong><%= listing.country %></strong>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="border rounded-3 p-3 h-100 bg-light">
+                <span class="text-muted small d-block">Category</span>
+                <strong><%= resolvedCategory ? resolvedCategory.label : "General Stay" %></strong>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="border rounded-3 p-3 h-100 bg-light">
+                <span class="text-muted small d-block">Guest Rating</span>
+                <strong>
+                  <% if (resolvedReviewStats.formattedAverage !== null) { %>
+                    <%= resolvedReviewStats.formattedAverage %> / 5 (<%= resolvedReviewStats.reviewCount %>)
+                  <% } else { %>
+                    Not rated yet
                   <% } %>
+                </strong>
+              </div>
+            </div>
           </div>
-          <div class="col-6 offset-3 mb-3">
-            <h3>Where you will be</h3>
-            <div id="map"></div>
-          </div>
-    </div>
+        </div>
 
-    <script src="/js/map.js"></script>
+        <!-- Right Column: Configurable Pricing & Estimated Tax Breakdown -->
+        <div class="col-12 col-lg-5">
+          <aside class="pricing-card p-3 p-md-4" aria-label="Estimated price breakdown">
+            <% if (resolvedPricing.isPriceAvailable) { %>
+              <div class="d-flex justify-content-between align-items-baseline border-bottom pb-3 mb-3">
+                <div>
+                  <span class="fs-4 fw-bold text-dark">&#8377; <%= resolvedPricing.formattedBasePrice %></span>
+                  <span class="text-muted">/ night</span>
+                  <div class="small text-muted">Base nightly rate (before taxes)</div>
+                </div>
+                <span class="badge text-bg-light border">Reference Estimate</span>
+              </div>
+
+              <form
+                method="GET"
+                action="/listings/<%= listing._id %>"
+                id="stayPricingForm"
+                class="mb-3"
+                novalidate
+              >
+                <label for="stayNightsInput" class="form-label small fw-semibold mb-1">
+                  Estimate stay duration (nights)
+                </label>
+                <div class="input-group input-group-sm">
+                  <input
+                    id="stayNightsInput"
+                    name="nights"
+                    type="number"
+                    min="1"
+                    max="<%= resolvedPricing.maxStayNights %>"
+                    step="1"
+                    value="<%= resolvedPricing.nights %>"
+                    class="form-control"
+                    aria-describedby="stayNightsFeedback"
+                  />
+                  <button type="submit" class="btn btn-outline-dark">Update</button>
+                </div>
+                <div id="stayNightsFeedback" class="invalid-feedback d-none mt-1"></div>
+              </form>
+
+              <div class="d-flex flex-column gap-2 small">
+                <div class="d-flex justify-content-between">
+                  <span id="pricingNightsLabel" class="text-muted">
+                    &#8377; <%= resolvedPricing.formattedBasePrice %> &times; <%= resolvedPricing.nights %> <%= resolvedPricing.nights === 1 ? "night" : "nights" %>
+                  </span>
+                  <span id="pricingSubtotal" class="fw-medium">
+                    &#8377; <%= resolvedPricing.formattedSubtotal %>
+                  </span>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                  <span id="pricingTaxLabel" class="text-muted">
+                    <%= resolvedPricing.taxLabel %> (<%= resolvedPricing.taxRatePercent %>%)
+                  </span>
+                  <span id="pricingTaxAmount" class="fw-medium">
+                    &#8377; <%= resolvedPricing.formattedTaxAmount %>
+                  </span>
+                </div>
+
+                <div class="text-muted" style="font-size: 0.78rem;">
+                  <%= resolvedPricing.taxDescription %>
+                </div>
+
+                <hr class="my-2" />
+
+                <div class="d-flex justify-content-between align-items-baseline fs-6">
+                  <strong class="text-dark">Estimated stay total</strong>
+                  <strong id="pricingTotal" class="text-dark">
+                    &#8377; <%= resolvedPricing.formattedEstimatedTotal %>
+                  </strong>
+                </div>
+              </div>
+
+              <p class="small text-muted mb-0 mt-3 pt-2 border-top" style="font-size: 0.78rem;">
+                <%= resolvedPricing.disclaimer %>
+              </p>
+            <% } else { %>
+              <div class="text-center py-3">
+                <i class="fa-solid fa-tag text-muted fs-3 mb-2" aria-hidden="true"></i>
+                <h3 class="h6 fw-semibold mb-1">Price currently unavailable</h3>
+                <p class="small text-muted mb-0">
+                  A valid nightly rate is not configured for this listing. Check back later for updated pricing.
+                </p>
+              </div>
+            <% } %>
+          </aside>
+        </div>
+      </div>
+
+      <hr class="my-4" />
+
+      <!-- Reviews Section -->
+      <section class="mb-4" aria-label="Guest reviews">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <div>
+            <h3 class="h4 mb-1">
+              Guest Reviews
+              <span class="text-muted fs-6 fw-normal">(<%= resolvedReviewStats.reviewCount %>)</span>
+            </h3>
+            <% if (resolvedReviewStats.formattedAverage !== null) { %>
+              <p class="small text-muted mb-0">
+                Average rating: <strong class="text-dark"><%= resolvedReviewStats.formattedAverage %> / 5</strong>
+                across <%= resolvedReviewStats.reviewCount %> <%= resolvedReviewStats.reviewCount === 1 ? "review" : "reviews" %>
+              </p>
+            <% } %>
+          </div>
+        </div>
+
+        <% if (currUser) { %>
+          <div class="card border rounded-4 p-3 p-md-4 mb-4">
+            <h4 class="h5 mb-3">Leave a Review</h4>
+            <form
+              action="/listings/<%= listing._id %>/reviews"
+              method="POST"
+              novalidate
+              class="needs-validation"
+            >
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+              <div class="mb-3">
+                <label class="form-label fw-semibold">Rating</label>
+                <fieldset class="starability-slot">
+                  <input
+                    type="radio"
+                    id="no-rate"
+                    class="input-no-rate"
+                    name="review[rating]"
+                    value="1"
+                    checked
+                    aria-label="No rating."
+                  />
+                  <input type="radio" id="first-rate1" name="review[rating]" value="1" />
+                  <label for="first-rate1" title="Terrible">1 star</label>
+                  <input type="radio" id="first-rate2" name="review[rating]" value="2" />
+                  <label for="first-rate2" title="Not good">2 stars</label>
+                  <input type="radio" id="first-rate3" name="review[rating]" value="3" />
+                  <label for="first-rate3" title="Average">3 stars</label>
+                  <input type="radio" id="first-rate4" name="review[rating]" value="4" />
+                  <label for="first-rate4" title="Very good">4 stars</label>
+                  <input type="radio" id="first-rate5" name="review[rating]" value="5" />
+                  <label for="first-rate5" title="Amazing">5 stars</label>
+                </fieldset>
+              </div>
+
+              <div class="mb-3">
+                <label for="comment" class="form-label fw-semibold">Comments</label>
+                <textarea
+                  name="review[comment]"
+                  id="comment"
+                  rows="4"
+                  class="form-control"
+                  placeholder="Share details of your experience at this listing"
+                  required
+                ></textarea>
+                <div class="invalid-feedback">Please enter some comments for your review.</div>
+              </div>
+
+              <button type="submit" class="btn btn-outline-dark">Submit</button>
+            </form>
+          </div>
+        <% } %>
+
+        <% if (Array.isArray(listing.reviews) && listing.reviews.length > 0) { %>
+          <p class="fw-semibold mb-3">All Reviews</p>
+          <div class="row row-cols-1 row-cols-md-2 g-3">
+            <% for (let review of listing.reviews) { %>
+              <div class="col">
+                <div class="card review-card h-100">
+                  <div class="card-body p-3 d-flex flex-column justify-content-between">
+                    <div>
+                      <h5 class="card-title h6 fw-semibold mb-2">@<%= review.author?.username || "Unknown User" %></h5>
+                      <p class="starability-result card-text mb-2" data-rating="<%= review.rating %>"></p>
+                      <p class="card-text mb-3"><%= review.comment %></p>
+                    </div>
+
+                    <% if (currUser && review.author && review.author._id.equals(currUser._id)) { %>
+                      <form
+                        method="POST"
+                        action="/listings/<%= listing._id %>/reviews/<%= review._id %>?_method=DELETE"
+                      >
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <button class="btn btn-sm btn-dark" type="submit">Delete</button>
+                      </form>
+                    <% } %>
+                  </div>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        <% } else { %>
+          <div class="review-empty-card p-4 text-center">
+            <i class="fa-regular fa-comment-dots fs-3 text-muted mb-2" aria-hidden="true"></i>
+            <p class="fw-semibold mb-1">No reviews yet</p>
+            <p class="small text-muted mb-0">
+              <%= currUser ? "Be the first guest to leave a review for this listing." : "Log in to be the first guest to share a review." %>
+            </p>
+          </div>
+        <% } %>
+      </section>
+
+      <hr class="my-4" />
+
+      <!-- Map Section -->
+      <section class="mb-4" aria-label="Listing location map">
+        <h3 class="h4 mb-1">Where you will be</h3>
+        <p class="text-muted small mb-3">
+          <%= listing.location %><% if (listing.country) { %>, <%= listing.country %><% } %>
+        </p>
+        <div class="map-frame rounded-4 overflow-hidden border bg-light">
+          <div id="map"></div>
+          <div
+            id="mapStatus"
+            class="map-status-overlay d-flex flex-column align-items-center justify-content-center text-center p-4"
+          >
+            <div class="spinner-border spinner-border-sm text-secondary mb-2" role="status" aria-hidden="true"></div>
+            <p class="mb-0 text-muted small">Loading map preview...</p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<script src="/js/map.js"></script>
+<script src="/js/listingDetails.js"></script>

@@ -30,6 +30,46 @@ function parsePositiveInt(rawValue, fallback) {
   return Math.floor(parsed);
 }
 
+const VALID_TAX_MODES = Object.freeze(["indian_gst_slabs", "flat", "none"]);
+
+function parseTaxRate(rawRate) {
+  if (rawRate === undefined || rawRate === null || String(rawRate).trim() === "") {
+    return null;
+  }
+  const parsed = Number(String(rawRate).trim());
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+    return NaN;
+  }
+  return parsed;
+}
+
+function parsePricingConfig(rawEnv = process.env) {
+  const rawMode =
+    rawEnv.TAX_MODE === undefined || rawEnv.TAX_MODE === null
+      ? ""
+      : String(rawEnv.TAX_MODE).trim().toLowerCase();
+  const parsedRate = parseTaxRate(rawEnv.TAX_RATE);
+
+  let taxMode = rawMode;
+  if (!taxMode) {
+    taxMode = parsedRate !== null ? "flat" : "indian_gst_slabs";
+  }
+
+  const rawLabel =
+    rawEnv.TAX_LABEL === undefined || rawEnv.TAX_LABEL === null
+      ? ""
+      : String(rawEnv.TAX_LABEL).trim();
+  const defaultLabel =
+    taxMode === "indian_gst_slabs" ? "Estimated GST" : "Estimated Tax";
+
+  return {
+    taxMode,
+    taxRate: parsedRate,
+    taxLabel: rawLabel || defaultLabel,
+    maxStayNights: Math.min(parsePositiveInt(rawEnv.MAX_STAY_NIGHTS, 90), 365),
+  };
+}
+
 function readEnv() {
   const nodeEnv = (process.env.NODE_ENV || "development").trim() || "development";
   return {
@@ -54,6 +94,7 @@ function readEnv() {
       ),
       authMaxAttempts: parsePositiveInt(process.env.AUTH_RATE_LIMIT_MAX, 10),
     },
+    pricing: parsePricingConfig(process.env),
     dnsServers: ["8.8.8.8", "8.8.4.4"],
   };
 }
@@ -77,6 +118,26 @@ function validateCoreEnv(config = env) {
     throw new Error(
       "Invalid PORT environment variable. Must be an integer between 0 and 65535."
     );
+  }
+  if (config.pricing) {
+    if (!VALID_TAX_MODES.includes(config.pricing.taxMode)) {
+      throw new Error(
+        `Invalid TAX_MODE environment variable. Allowed values: ${VALID_TAX_MODES.join(", ")}.`
+      );
+    }
+    if (Number.isNaN(config.pricing.taxRate)) {
+      throw new Error(
+        "Invalid TAX_RATE environment variable. Must be a finite percentage between 0 and 100."
+      );
+    }
+    if (
+      config.pricing.taxMode === "flat" &&
+      (config.pricing.taxRate === null || !Number.isFinite(config.pricing.taxRate))
+    ) {
+      throw new Error(
+        "TAX_RATE environment variable is required when TAX_MODE is set to 'flat'."
+      );
+    }
   }
   return true;
 }
@@ -109,5 +170,8 @@ module.exports = {
   validateEnv,
   parsePort,
   parsePositiveInt,
+  parseTaxRate,
+  parsePricingConfig,
+  VALID_TAX_MODES,
 };
 
