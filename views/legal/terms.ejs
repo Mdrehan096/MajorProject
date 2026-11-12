@@ -1,0 +1,67 @@
+<% layout("/layout/boilerplate") %>
+
+<div class="container px-0 my-4">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-9">
+      <div class="legal-card p-4 p-md-5">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 border-bottom pb-3 mb-4">
+          <div>
+            <h1 class="h2 fw-bold mb-1">Terms and Conditions</h1>
+            <p class="text-muted small mb-0">
+              Last updated: <strong><%= effectiveDate %></strong> &middot; Governing use of <%= operatorName %>
+            </p>
+          </div>
+          <a href="/privacy" class="btn btn-sm btn-outline-dark">Privacy Policy</a>
+        </div>
+
+        <div class="alert alert-light border small mb-4" role="note">
+          <strong>Platform Scope Notice:</strong> <%= operatorName %> currently operates as an accommodation showcase, discovery, and review platform. Online booking execution and payment processing are not enabled at this stage. Legal counsel review is recommended before commercial deployment.
+        </div>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">1. Platform Role &amp; Account Responsibilities</h2>
+          <ul class="text-body small mb-0 lh-lg">
+            <li>By creating an account or accessing <%= operatorName %>, you agree to provide accurate registration information and maintain the confidentiality of your password.</li>
+            <li>You are responsible for activity conducted through your authenticated account session. Never share credentials or attempt to access another user&rsquo;s listings, reviews, profile, or dashboard.</li>
+          </ul>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">2. Host Listings &amp; User-Generated Content</h2>
+          <ul class="text-body small mb-0 lh-lg">
+            <li>Hosts warrant that submitted property titles, descriptions, base nightly rates, categories, location names, and uploaded images are accurate, lawful, and free of third-party copyright or privacy violations.</li>
+            <li>Guests submitting ratings and comments agree to share honest, respectful feedback and refrain from spam, abusive language, or misleading statements.</li>
+            <li>By uploading listings or reviews, you grant <%= operatorName %> a non-exclusive license to host, format, and display that content within the platform.</li>
+          </ul>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">3. Pricing &amp; Tax Estimates Disclaimer</h2>
+          <p class="text-body small lh-lg mb-0">
+            Base nightly prices, stay duration previews, and Goods and Services Tax (GST) calculations shown on listing cards and detail pages are provided strictly as <strong>reference estimates</strong>. Final pricing, applicable tax slabs, exemptions, and charges depend on host tax registration status, actual stay dates, discounts, and applicable law.
+          </p>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">4. Map Previews &amp; Third-Party Availability</h2>
+          <p class="text-body small lh-lg mb-0">
+            Map coordinates generated through Mapbox represent approximate listing areas rather than exact street-level property addresses. <%= operatorName %> does not guarantee uninterrupted availability of external map tile, image CDN, or geocoding providers.
+          </p>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">5. Moderation &amp; Limitation of Liability</h2>
+          <p class="text-body small lh-lg mb-0">
+            <%= operatorName %> is provided &ldquo;as is&rdquo; without warranties regarding property condition, safety, or third-party host claims. Platform administrators reserve the right to restrict abusive accounts or remove listings/reviews that violate these Terms or applicable law.
+          </p>
+        </section>
+
+        <div class="d-flex flex-wrap gap-2 pt-3 border-top">
+          <a href="/listings" class="btn btn-dark edit-btn btn-sm px-3">Explore Listings</a>
+          <a href="/privacy" class="btn btn-outline-dark btn-sm px-3">Read Privacy Policy</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+

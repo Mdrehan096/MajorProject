@@ -4,6 +4,7 @@ const router = express.Router();
 const listingRouter = require("./listing.js");
 const reviewRouter = require("./review.js");
 const userRouter = require("./user.js");
+const legalRouter = require("./legal.js");
 
 // Home route
 router.get("/", (req, res) => {
@@ -13,6 +14,7 @@ router.get("/", (req, res) => {
 router.use("/listings", listingRouter);
 router.use("/listings/:id/reviews", reviewRouter);
 router.use("/", userRouter);
+router.use("/", legalRouter);
 
 module.exports = router;
 

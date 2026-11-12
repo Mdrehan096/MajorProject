@@ -45,10 +45,14 @@ body {
 .f-info-social,
 .f-info-brand {
   width: 100%;
-  vertical-align: middle;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
+}
+
+.f-info-links {
+  gap: 1.25rem;
 }
 
 .f-info-social i {
@@ -56,14 +60,20 @@ body {
   margin-right: 1rem;
 }
 
+.f-info-social i:last-child {
+  margin-right: 0;
+}
+
 .f-info {
   text-align: center;
-  height: 8rem;
+  min-height: 7.5rem;
+  padding: 1.25rem 1rem;
+  gap: 0.5rem;
   background-color: #ebebeb;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  align-items: space-evenly;
+  align-content: center;
 }
 
 /* card */
@@ -323,4 +333,15 @@ body {
   align-items: center;
   justify-content: center;
   color: #6c757d;
+}
+
+/* legal, auth, error & form cards */
+.legal-card,
+.auth-card,
+.error-card,
+.form-card {
+  border: 1px solid #e9ecef;
+  border-radius: 1rem;
+  background-color: #ffffff;
+  box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.04);
 }

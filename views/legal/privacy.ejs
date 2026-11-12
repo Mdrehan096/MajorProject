@@ -1,0 +1,68 @@
+<% layout("/layout/boilerplate") %>
+
+<div class="container px-0 my-4">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-9">
+      <div class="legal-card p-4 p-md-5">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 border-bottom pb-3 mb-4">
+          <div>
+            <h1 class="h2 fw-bold mb-1">Privacy Policy</h1>
+            <p class="text-muted small mb-0">
+              Last updated: <strong><%= effectiveDate %></strong> &middot; Applies to the <%= operatorName %> accommodation listing platform
+            </p>
+          </div>
+          <a href="/terms" class="btn btn-sm btn-outline-dark">Terms &amp; Conditions</a>
+        </div>
+
+        <div class="alert alert-light border small mb-4" role="note">
+          <strong>Transparency Notice:</strong> This policy describes the exact technical data handling currently implemented in <%= operatorName %>. Qualified legal review should be obtained prior to commercial launch in any target jurisdiction.
+        </div>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">1. Information We Collect</h2>
+          <ul class="text-body small mb-0 lh-lg">
+            <li>
+              <strong>Account &amp; Profile Details:</strong> When you register or update your account via <a href="/profile">My Profile</a>, we store your <code>username</code>, email address, salted PBKDF2 password credentials (never plaintext passwords), and optional profile details you choose to provide (display name, bio, city/region, and timestamps).
+            </li>
+            <li>
+              <strong>Listings &amp; Reviews:</strong> When you publish an accommodation listing or leave a review, we store the title, description, nightly rate, optional category, city/country, uploaded image URL/reference, geocoded coordinates for map display, star rating, and comment text linked to your account.
+            </li>
+            <li>
+              <strong>Private vs. Public Visibility:</strong> Your public listing pages and reviews display only your <code>@username</code>. Your account email address is kept private inside your authenticated <a href="/profile">Profile</a> and is never intentionally rendered on public listing or review pages.
+            </li>
+          </ul>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">2. Essential Session Cookies &amp; Security Controls</h2>
+          <p class="text-body small lh-lg mb-0">
+            <%= operatorName %> uses strictly essential <code>HttpOnly</code>, <code>SameSite=Lax</code> session cookies stored in MongoDB (up to 7 days) to keep you signed in, validate anti-CSRF tokens on state-changing requests, restore interrupted page redirects after login, and display one-time flash alerts. We do not use advertising cookies, behavioral ad trackers, or cross-site tracking pixels, and we do not sell user data.
+          </p>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">3. Third-Party Infrastructure Services</h2>
+          <ul class="text-body small mb-0 lh-lg">
+            <li><strong>MongoDB Atlas:</strong> Hosts user accounts, session state, accommodation listings, and guest reviews over encrypted database connections.</li>
+            <li><strong>Cloudinary:</strong> Stores and serves uploaded property listing images and handles cleanup of unreferenced or deleted listing photos.</li>
+            <li><strong>Mapbox:</strong> Converts submitted listing location strings into geographic coordinates and renders location preview maps on listing detail pages.</li>
+            <li><strong>Public Static CDNs:</strong> Delivers Bootstrap, Font Awesome, and Mapbox GL CSS/JS assets under Content Security Policy controls.</li>
+          </ul>
+        </section>
+
+        <section class="mb-4">
+          <h2 class="h5 fw-semibold mb-2">4. Managing &amp; Removing Your Information</h2>
+          <p class="text-body small lh-lg mb-0">
+            Signed-in users can review and update editable profile fields on <a href="/profile">My Profile</a>, and manage or delete their own listings and reviews directly from the <a href="/dashboard">User Dashboard</a> or individual listing pages. Deleting a listing automatically removes its associated reviews and deletes unreferenced listing images from Cloudinary.
+          </p>
+        </section>
+
+        <div class="d-flex flex-wrap gap-2 pt-3 border-top">
+          <a href="/listings" class="btn btn-dark edit-btn btn-sm px-3">Explore Listings</a>
+          <a href="/terms" class="btn btn-outline-dark btn-sm px-3">Read Terms &amp; Conditions</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+

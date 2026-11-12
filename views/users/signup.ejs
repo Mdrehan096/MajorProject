@@ -1,43 +1,61 @@
- <% layout("/layout/boilerplate") %>
-    <h1 class="col-6 offset-3"> Signup on the Wandurlust</h1>
-  <div class="row mt-3">
-      <div class="col-6 offset-3">
-         <form action="/signup"  method="POST" class="needs-validation" novalidate>
-               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-               <div class="mb-3">
-               <label for="username" class="form-label">Username</label>
-                 <input 
-                     name="username" 
-                     id="username" 
-                     type="text" 
-                     class="form-control"
-                      required
-                  />
-              <div class="valid-feedback">Looks good</div>
-           </div>
+<% layout("/layout/boilerplate") %>
 
-           <div class="mb-3">
-               <label for="email" class="form-label">Email</label>
-                 <input 
-                     name="email" 
-                     id="email" 
-                     type="email" 
-                     class="form-control"
-                      required
-                  />
-           </div>
+<div class="row justify-content-center my-4">
+  <div class="col-12 col-sm-10 col-md-8 col-lg-5">
+    <div class="auth-card p-4 p-md-5">
+      <h1 class="h3 fw-bold mb-1">Sign up for Wanderlust</h1>
+      <p class="text-muted small mb-4">Create an account to host properties and share stay reviews.</p>
 
-           <div class="mb-3">
-               <label for="password" class="form-label">Password</label>
-                 <input 
-                     name="password" 
-                     id="password" 
-                     type="password" 
-                     class="form-control"
-                      required
-                  />
-           </div>
-                <button class="btn btn-success">Signup</button>
-         </form>                     
-       </div>
-  </div>                       
+      <form action="/signup" method="POST" class="needs-validation" novalidate>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+        <div class="mb-3">
+          <label for="username" class="form-label fw-semibold">Username</label>
+          <input
+            name="username"
+            id="username"
+            type="text"
+            class="form-control"
+            autocomplete="username"
+            required
+          />
+          <div class="valid-feedback">Looks good</div>
+        </div>
+
+        <div class="mb-3">
+          <label for="email" class="form-label fw-semibold">Email</label>
+          <input
+            name="email"
+            id="email"
+            type="email"
+            class="form-control"
+            autocomplete="email"
+            required
+          />
+        </div>
+
+        <div class="mb-3">
+          <label for="password" class="form-label fw-semibold">Password</label>
+          <input
+            name="password"
+            id="password"
+            type="password"
+            class="form-control"
+            autocomplete="new-password"
+            required
+          />
+        </div>
+
+        <p class="small text-muted mb-3">
+          By signing up, you agree to our <a href="/terms">Terms &amp; Conditions</a> and <a href="/privacy">Privacy Policy</a>.
+        </p>
+
+        <button class="btn btn-dark edit-btn w-100 py-2" type="submit">Signup</button>
+      </form>
+
+      <p class="small text-muted text-center mt-4 mb-0">
+        Already have an account? <a href="/login" class="fw-semibold text-decoration-none">Log in</a>
+      </p>
+    </div>
+  </div>
+</div>
