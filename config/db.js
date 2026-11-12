@@ -1,8 +1,16 @@
 const dns = require("node:dns");
 const mongoose = require("mongoose");
 const { env } = require("./env.js");
+const { logInfo, logWarn, logError } = require("../utils/logger.js");
 
 let listenersAttached = false;
+
+const DB_STATE_LABELS = Object.freeze({
+  0: "disconnected",
+  1: "connected",
+  2: "connecting",
+  3: "disconnecting",
+});
 
 function configureDatabaseDns(mongoUrl = env.atlasDbUrl, dnsServers = env.dnsServers) {
   if (
@@ -22,8 +30,25 @@ function ensureConnectionListeners() {
   listenersAttached = true;
 
   mongoose.connection.on("error", (err) => {
-    console.error("MongoDB connection error:", err?.message || "Unknown error");
+    logError("db.connection_error", { message: err?.message || "Unknown error" });
   });
+
+  mongoose.connection.on("disconnected", () => {
+    logWarn("db.disconnected");
+  });
+
+  mongoose.connection.on("reconnected", () => {
+    logInfo("db.reconnected");
+  });
+}
+
+function getDatabaseHealth() {
+  const readyState = mongoose.connection?.readyState ?? 0;
+  return {
+    connected: readyState === 1,
+    readyState,
+    stateLabel: DB_STATE_LABELS[readyState] || "unknown",
+  };
 }
 
 async function connectDB(mongoUrl = env.atlasDbUrl) {
@@ -38,8 +63,14 @@ async function connectDB(mongoUrl = env.atlasDbUrl) {
     return mongoose.connection;
   }
 
-  await mongoose.connect(mongoUrl);
-  console.log("Connected to DB");
+  const connectOptions = {
+    maxPoolSize: env.db?.maxPoolSize || 10,
+    serverSelectionTimeoutMS: env.db?.serverSelectionTimeoutMS || 10000,
+    socketTimeoutMS: env.db?.socketTimeoutMS || 45000,
+  };
+
+  await mongoose.connect(mongoUrl, connectOptions);
+  logInfo("db.connected", { maxPoolSize: connectOptions.maxPoolSize });
   return mongoose.connection;
 }
 
@@ -53,5 +84,6 @@ module.exports = {
   connectDB,
   disconnectDB,
   configureDatabaseDns,
+  getDatabaseHealth,
 };
 

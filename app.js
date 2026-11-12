@@ -34,8 +34,9 @@ function createApp({ sessionStore, sessionOptions } = {}) {
 
   app.use(securityHeadersMiddleware(isProduction));
 
-  app.use(express.urlencoded({ extended: true }));
-  app.use(express.json());
+  const bodyLimit = env.bodyLimit || "100kb";
+  app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
+  app.use(express.json({ limit: bodyLimit }));
   app.use(methodOverride("_method"));
   app.use(
     express.static(

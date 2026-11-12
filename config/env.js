@@ -102,6 +102,29 @@ function parsePricingConfig(rawEnv = process.env) {
   };
 }
 
+function parseDnsServers(rawValue) {
+  if (rawValue === undefined || rawValue === null) {
+    return ["8.8.8.8", "8.8.4.4"];
+  }
+  const trimmed = String(rawValue).trim();
+  if (!trimmed || /^(?:none|system|off|false)$/i.test(trimmed)) {
+    return [];
+  }
+  return trimmed
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+const WEAK_SECRETS = new Set([
+  "secret",
+  "changeme",
+  "mysupersecretcode",
+  "default",
+  "wanderlust",
+  "test_secret",
+]);
+
 function readEnv() {
   const nodeEnv = (process.env.NODE_ENV || "development").trim() || "development";
   return {
@@ -110,6 +133,33 @@ function readEnv() {
     port: parsePort(process.env.PORT, 8080),
     atlasDbUrl: (process.env.ATLASDB_URL || "").trim(),
     sessionSecret: process.env.SECRET || "",
+    bodyLimit: (process.env.BODY_LIMIT || "100kb").trim() || "100kb",
+    shutdownTimeoutMs: parsePositiveBoundedInt(
+      process.env.SHUTDOWN_TIMEOUT_MS,
+      10000,
+      1000,
+      30000
+    ),
+    db: {
+      maxPoolSize: parsePositiveBoundedInt(
+        process.env.DB_MAX_POOL_SIZE,
+        10,
+        1,
+        100
+      ),
+      serverSelectionTimeoutMS: parsePositiveBoundedInt(
+        process.env.DB_SERVER_SELECTION_TIMEOUT_MS,
+        10000,
+        1000,
+        60000
+      ),
+      socketTimeoutMS: parsePositiveBoundedInt(
+        process.env.DB_SOCKET_TIMEOUT_MS,
+        45000,
+        5000,
+        120000
+      ),
+    },
     cloudinary: {
       cloudName: (process.env.CLOUD_NAME || "").trim(),
       apiKey: (process.env.CLOUD_API_KEY || "").trim(),
@@ -128,7 +178,7 @@ function readEnv() {
     },
     pricing: parsePricingConfig(process.env),
     booking: parseBookingConfig(process.env),
-    dnsServers: ["8.8.8.8", "8.8.4.4"],
+    dnsServers: parseDnsServers(process.env.DB_DNS_SERVERS),
   };
 }
 
@@ -146,6 +196,17 @@ function validateCoreEnv(config = env) {
     throw new Error(
       `Missing required environment variable(s): ${missing.join(", ")}.`
     );
+  }
+  if (config.isProduction) {
+    const trimmedSecret = String(config.sessionSecret).trim();
+    if (
+      trimmedSecret.length < 32 ||
+      WEAK_SECRETS.has(trimmedSecret.toLowerCase())
+    ) {
+      throw new Error(
+        "SECRET must be at least 32 characters and non-default in production."
+      );
+    }
   }
   if (Number.isNaN(config.port)) {
     throw new Error(
@@ -206,6 +267,7 @@ module.exports = {
   parseTaxRate,
   parsePricingConfig,
   parseBookingConfig,
+  parseDnsServers,
   VALID_TAX_MODES,
 };
 

@@ -2,6 +2,7 @@ const ExpressError = require("../utils/ExpressError.js");
 const safeJson = require("../utils/safeJson.js");
 const { getDefaultListingQuery } = require("../utils/listingOptions.js");
 const { cleanupFileIfUncommitted } = require("../utils/cloudinaryCleanup.js");
+const { maskSensitiveText } = require("../utils/logger.js");
 
 function notFoundHandler(req, res, next) {
   next(new ExpressError(404, "Page Not Found"));
@@ -38,7 +39,24 @@ function resolvePublicError(err, isProduction) {
   const statusCode =
     err?.statusCode ||
     err?.status ||
-    (err?.name === "CastError" ? 400 : 500);
+    (err?.name === "CastError" || err?.name === "MulterError" ? 400 : 500);
+
+  if (err?.type === "entity.too.large") {
+    return {
+      statusCode: 413,
+      message: "Request payload exceeds the allowed size limit.",
+    };
+  }
+
+  if (err?.name === "MulterError") {
+    return {
+      statusCode: 400,
+      message:
+        err.code === "LIMIT_FILE_SIZE"
+          ? "Uploaded image exceeds the maximum allowed size."
+          : "Invalid file upload payload.",
+    };
+  }
 
   if (
     err?.type === "entity.parse.failed" ||
@@ -66,8 +84,9 @@ function createErrorHandler(isProduction = false) {
     Promise.resolve(cleanupFileIfUncommitted(req)).finally(() => {
       const { statusCode, message } = resolvePublicError(err, isProduction);
 
+      const safeErrDetail = maskSensitiveText(err?.message || message);
       console.error(
-        `[Error] ${req.method} ${req.originalUrl} -> ${statusCode}: ${err?.message || message}`
+        `[Error] ${req.method} ${req.originalUrl} -> ${statusCode}: ${safeErrDetail}`
       );
       ensureErrorRenderLocals(req, res);
 

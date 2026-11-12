@@ -3,6 +3,7 @@ const session = require("express-session");
 const MongoStore = require("connect-mongo").default;
 const { env, validateCoreEnv } = require("./env.js");
 const { configureDatabaseDns } = require("./db.js");
+const { logError } = require("../utils/logger.js");
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TOUCH_AFTER_SECONDS = 24 * 3600;
@@ -35,7 +36,7 @@ function createSessionStore({
   store._usesMongooseClient = hasConnectedMongooseClient;
 
   store.on("error", (err) => {
-    console.error("Error in MONGO SESSION STORE:", err?.message || "Unknown error");
+    logError("session.store_error", { message: err?.message || "Unknown error" });
   });
 
   return store;
