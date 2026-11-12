@@ -321,6 +321,81 @@ function calculateBookingPrice(nightlyPrice, nights, options = {}) {
   };
 }
 
+function buildActiveOverlapFilter(listingId, checkIn, checkOut, excludeBookingId) {
+  const conflictQuery = {
+    listing: listingId,
+    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+    checkIn: { $lt: checkOut },
+    checkOut: { $gt: checkIn },
+  };
+  if (excludeBookingId) {
+    conflictQuery._id = { $ne: excludeBookingId };
+  }
+  return conflictQuery;
+}
+
+async function queryBlockedDatesForListing(listingId, options = {}) {
+  const todayUtc = getTodayUtcMidnight(options.fromDate || options.now);
+  const bookings = await Booking.find({
+    listing: listingId,
+    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+    checkOut: { $gt: todayUtc },
+  })
+    .select("checkIn checkOut -_id")
+    .sort({ checkIn: 1 })
+    .lean();
+
+  return bookings.map((b) => ({
+    checkIn: formatCalendarDate(new Date(b.checkIn)),
+    checkOut: formatCalendarDate(new Date(b.checkOut)),
+  }));
+}
+
+async function queryDateAvailabilityForListing(
+  listingId,
+  checkInRaw,
+  checkOutRaw,
+  options = {}
+) {
+  const taxConfig = resolveTaxConfig(env.pricing);
+  const maxStayNights = Number.isInteger(options.maxStayNights)
+    ? options.maxStayNights
+    : taxConfig.maxStayNights;
+
+  const { checkIn, checkOut, checkInStr, checkOutStr, nights } =
+    normalizeStayDates(checkInRaw, checkOutRaw, {
+      maxNights: maxStayNights,
+      now: options.now,
+      allowPastCheckIn: Boolean(options.allowPastCheckIn),
+    });
+
+  const conflictQuery = buildActiveOverlapFilter(
+    listingId,
+    checkIn,
+    checkOut,
+    options.excludeBookingId
+  );
+
+  const bookingFinder = options.session
+    ? Booking.findOne(conflictQuery, "_id checkIn checkOut status", {
+        session: options.session,
+      })
+    : Booking.findOne(conflictQuery, "_id checkIn checkOut status");
+  const conflictingBooking = await bookingFinder;
+
+  return {
+    available: !conflictingBooking,
+    listingId: String(listingId),
+    checkIn,
+    checkOut,
+    checkInStr,
+    checkOutStr,
+    nights,
+    activeStatuses: [...ACTIVE_BOOKING_STATUSES],
+    conflictingBookingId: conflictingBooking ? conflictingBooking._id : null,
+  };
+}
+
 async function checkAvailability(
   listingId,
   checkInRaw,
@@ -343,12 +418,11 @@ async function checkAvailability(
     ? resolvedOpts.maxStayNights
     : taxConfig.maxStayNights;
 
-  const { checkIn, checkOut, checkInStr, checkOutStr, nights } =
-    normalizeStayDates(checkInRaw, checkOutRaw, {
-      maxNights: maxStayNights,
-      now: resolvedOpts.now,
-      allowPastCheckIn: Boolean(resolvedOpts.allowPastCheckIn),
-    });
+  const normalizedDates = normalizeStayDates(checkInRaw, checkOutRaw, {
+    maxNights: maxStayNights,
+    now: resolvedOpts.now,
+    allowPastCheckIn: Boolean(resolvedOpts.allowPastCheckIn),
+  });
 
   const listingQuery = resolvedOpts.session
     ? Listing.findById(listingId, "_id owner price maxGuests", {
@@ -360,15 +434,12 @@ async function checkAvailability(
     throw new ExpressError(404, "Listing Not Found ❌");
   }
 
-  const conflictQuery = {
-    listing: listing._id,
-    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
-    checkIn: { $lt: checkOut },
-    checkOut: { $gt: checkIn },
-  };
-  if (resolvedOpts.excludeBookingId) {
-    conflictQuery._id = { $ne: resolvedOpts.excludeBookingId };
-  }
+  const conflictQuery = buildActiveOverlapFilter(
+    listing._id,
+    normalizedDates.checkIn,
+    normalizedDates.checkOut,
+    resolvedOpts.excludeBookingId
+  );
 
   const bookingFinder = resolvedOpts.session
     ? Booking.findOne(conflictQuery, "_id checkIn checkOut status", {
@@ -380,11 +451,11 @@ async function checkAvailability(
   return {
     available: !conflictingBooking,
     listingId: String(listing._id),
-    checkIn,
-    checkOut,
-    checkInStr,
-    checkOutStr,
-    nights,
+    checkIn: normalizedDates.checkIn,
+    checkOut: normalizedDates.checkOut,
+    checkInStr: normalizedDates.checkInStr,
+    checkOutStr: normalizedDates.checkOutStr,
+    nights: normalizedDates.nights,
     activeStatuses: [...ACTIVE_BOOKING_STATUSES],
     conflictingBookingId: conflictingBooking ? conflictingBooking._id : null,
   };
@@ -403,20 +474,7 @@ async function getListingBlockedDates(listingId, options = {}) {
     throw new ExpressError(404, "Listing Not Found ❌");
   }
 
-  const todayUtc = getTodayUtcMidnight(resolvedOpts.fromDate || resolvedOpts.now);
-  const bookings = await Booking.find({
-    listing: listingId,
-    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
-    checkOut: { $gt: todayUtc },
-  })
-    .select("checkIn checkOut -_id")
-    .sort({ checkIn: 1 })
-    .lean();
-
-  return bookings.map((b) => ({
-    checkIn: formatCalendarDate(new Date(b.checkIn)),
-    checkOut: formatCalendarDate(new Date(b.checkOut)),
-  }));
+  return queryBlockedDatesForListing(listingId, resolvedOpts);
 }
 
 function buildBookingListingSnapshot(listing) {
@@ -738,7 +796,7 @@ async function getGuestBookings(guestId, options = {}) {
 
   if (!hasPagination) {
     const [bookings, allStatusDocs] = await Promise.all([
-      Booking.find(filter)
+      Booking.find(filter, null, { lean: true })
         .sort({ createdAt: -1, _id: -1 })
         .populate("listing", "title location country image price maxGuests")
         .populate("host", "username displayName location"),
@@ -788,7 +846,7 @@ async function getGuestBookings(guestId, options = {}) {
 
   const bookings = isOutOfRangePage
     ? []
-    : await Booking.find(filter)
+    : await Booking.find(filter, null, { lean: true })
         .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
@@ -932,7 +990,7 @@ async function getHostBookings(hostId, options = {}) {
 
   if (!hasPagination) {
     const [bookings, allStatusDocs] = await Promise.all([
-      Booking.find(filter)
+      Booking.find(filter, null, { lean: true })
         .sort({ createdAt: -1, _id: -1 })
         .populate("listing", "title location country image price maxGuests owner")
         .populate("guest", "username displayName location"),
@@ -976,7 +1034,7 @@ async function getHostBookings(hostId, options = {}) {
 
   const bookings = isOutOfRangePage
     ? []
-    : await Booking.find(filter)
+    : await Booking.find(filter, null, { lean: true })
         .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
@@ -1251,9 +1309,6 @@ async function getBookingReviewDetails(listingId, rawQuery = {}, options = {}) {
   const taxConfig = resolveTaxConfig(resolvedOpts.taxConfig || env.pricing);
   const maxGuests = resolveListingMaxGuests(listing);
   const todayStr = formatCalendarDate(getTodayUtcMidnight(resolvedOpts.now));
-  const blockedDates = await getListingBlockedDates(listing._id, {
-    now: resolvedOpts.now,
-  });
   const isOwnListing = Boolean(
     resolvedOpts.actorId &&
       listing.owner &&
@@ -1270,9 +1325,14 @@ async function getBookingReviewDetails(listingId, rawQuery = {}, options = {}) {
     taxConfig,
   });
 
+  const blockedPromise = queryBlockedDatesForListing(listing._id, {
+    now: resolvedOpts.now,
+  });
+
   const hasDateInput = Boolean(checkInInput || checkOutInput);
+  let availabilityPromise = Promise.resolve(null);
   if (hasDateInput) {
-    try {
+    availabilityPromise = (async () => {
       const requestedGuests = guestsInput ? parseGuestCount(guestsInput) : 1;
       if (requestedGuests > maxGuests) {
         throw new ExpressError(
@@ -1286,8 +1346,7 @@ async function getBookingReviewDetails(listingId, rawQuery = {}, options = {}) {
           "Both check-in and check-out dates are required."
         );
       }
-
-      availability = await checkAvailability(
+      return queryDateAvailabilityForListing(
         listing._id,
         checkInInput,
         checkOutInput,
@@ -1296,7 +1355,20 @@ async function getBookingReviewDetails(listingId, rawQuery = {}, options = {}) {
           maxStayNights: taxConfig.maxStayNights,
         }
       );
+    })();
+  }
 
+  const [blockedDates, availabilitySettled] = await Promise.all([
+    blockedPromise,
+    availabilityPromise.then(
+      (value) => ({ ok: true, value }),
+      (err) => ({ ok: false, err })
+    ),
+  ]);
+
+  if (hasDateInput) {
+    if (availabilitySettled.ok) {
+      availability = availabilitySettled.value;
       pricing = calculatePriceBreakdown({
         nightlyPrice: listing.price,
         nights: availability.nights,
@@ -1307,8 +1379,10 @@ async function getBookingReviewDetails(listingId, rawQuery = {}, options = {}) {
         reviewError =
           "Selected dates overlap an existing active reservation. Please select another date range.";
       }
-    } catch (err) {
-      reviewError = err?.message || "Please enter valid booking dates and guest count.";
+    } else {
+      reviewError =
+        availabilitySettled.err?.message ||
+        "Please enter valid booking dates and guest count.";
     }
   }
 
@@ -1346,6 +1420,8 @@ module.exports = {
   calculateBookingPrice,
   checkAvailability,
   getListingBlockedDates,
+  queryBlockedDatesForListing,
+  queryDateAvailabilityForListing,
   hasUpcomingActiveBookings,
   getBookingReviewDetails,
   createBooking,

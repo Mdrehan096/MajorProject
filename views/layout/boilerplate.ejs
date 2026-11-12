@@ -21,8 +21,10 @@
 
     <link href="/css/rating.css" rel="stylesheet" />
 
-    <link href="https://api.mapbox.com/mapbox-gl-js/v3.24.0/mapbox-gl.css" rel="stylesheet">
-    <script src="https://api.mapbox.com/mapbox-gl-js/v3.24.0/mapbox-gl.js"></script>
+    <% if ((typeof includeMapbox !== "undefined" && includeMapbox) || typeof mapListing !== "undefined") { %>
+      <link href="https://api.mapbox.com/mapbox-gl-js/v3.24.0/mapbox-gl.css" rel="stylesheet" />
+      <script defer src="https://api.mapbox.com/mapbox-gl-js/v3.24.0/mapbox-gl.js"></script>
+    <% } %>
   </head>
   <body>
     <%- include("../include/navbar.ejs") %>

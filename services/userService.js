@@ -195,7 +195,9 @@ async function findUserByUsername(username) {
 async function getUserProfile(userId) {
   validateUserId(userId);
 
-  const userDoc = await User.findById(userId).select("-hash -salt");
+  const userDoc = await User.findById(userId, null, { lean: true }).select(
+    "-hash -salt"
+  );
   if (!userDoc) {
     return null;
   }
@@ -241,24 +243,34 @@ async function updateUserProfile(userId, payload) {
 async function getUserDashboard(userId) {
   validateUserId(userId);
 
-  const userDoc = await User.findById(userId).select("-hash -salt");
+  const userDoc = await User.findById(userId, null, { lean: true }).select(
+    "-hash -salt"
+  );
   if (!userDoc) {
     return null;
   }
 
   const [ownedListingsRaw, authoredReviewsRaw] = await Promise.all([
-    Listing.find({ owner: userDoc._id })
+    Listing.find(
+      { owner: userDoc._id },
+      "title location country price image category reviews",
+      { lean: true }
+    )
       .sort({ _id: -1 })
       .populate("reviews", "rating"),
-    Review.find({ author: userDoc._id }).sort({ createdAt: -1, _id: -1 }),
+    Review.find({ author: userDoc._id }, "rating comment createdAt", {
+      lean: true,
+    }).sort({ createdAt: -1, _id: -1 }),
   ]);
 
   const authoredReviewIds = authoredReviewsRaw.map((rev) => rev._id);
   const parentListings =
     authoredReviewIds.length > 0
-      ? await Listing.find({ reviews: { $in: authoredReviewIds } }).select(
-          "title location country reviews"
-        )
+      ? await Listing.find(
+          { reviews: { $in: authoredReviewIds } },
+          null,
+          { lean: true }
+        ).select("title location country reviews")
       : [];
 
   const listingByReviewId = new Map();

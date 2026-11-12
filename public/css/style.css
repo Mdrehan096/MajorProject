@@ -24,6 +24,29 @@ body {
   color: #222222 !important;
 }
 
+.search-btn {
+  background-color: #fe424d;
+  color: #fff;
+  border-radius: 25px;
+  padding: 0 1rem;
+}
+
+.search-btn:hover {
+  background-color: #e03742;
+  color: #fff;
+}
+
+.search-btn i {
+  display: inline;
+  margin-right: 0.5rem;
+}
+
+.search-inp {
+  border-radius: 25px;
+  padding: 0.5rem 1.5rem;
+  font-size: 1rem;
+}
+
 @media (max-width: 767.98px) {
   .navbar-collapse {
     background-color: white;

@@ -408,7 +408,11 @@ function buildOriginalImageUrl(image) {
 }
 
 async function getAllListings() {
-  return Listing.find({});
+  return Listing.find(
+    {},
+    "title location country price category image",
+    { lean: true }
+  );
 }
 
 async function searchListings(rawQuery = {}) {
@@ -422,7 +426,11 @@ async function searchListings(rawQuery = {}) {
 
   let listings = [];
   if (totalCount > 0 && filters.page <= totalPages) {
-    listings = await Listing.find(filter)
+    listings = await Listing.find(
+      filter,
+      "title location country price category image",
+      { lean: true }
+    )
       .sort(sortMeta.sortSpec)
       .skip(skip)
       .limit(filters.limit);
@@ -530,13 +538,6 @@ async function getListingDetails(id, rawQuery = {}, options = {}) {
   const shouldLoadAvailability =
     isDatabaseConnected() || options?.includeAvailability === true;
 
-  let blockedDates = [];
-  if (shouldLoadAvailability) {
-    blockedDates = await bookingService.getListingBlockedDates(listing._id, {
-      now: options?.now,
-    });
-  }
-
   let availabilityCheck = {
     checked: false,
     valid: null,
@@ -550,13 +551,22 @@ async function getListingDetails(id, rawQuery = {}, options = {}) {
     message: "",
   };
 
+  const blockedPromise = shouldLoadAvailability
+    ? bookingService.queryBlockedDatesForListing(listing._id, {
+        now: options?.now,
+      })
+    : Promise.resolve([]);
+
   const hasAnyDateInput = Boolean(checkInRaw || checkOutRaw);
+  let requestedGuestsForDates = 1;
+  let dateCheckPromise = Promise.resolve(null);
+
   if (hasAnyDateInput) {
-    try {
-      const requestedGuests = guestsRaw
+    dateCheckPromise = (async () => {
+      requestedGuestsForDates = guestsRaw
         ? bookingService.parseGuestCount(guestsRaw)
         : 1;
-      if (requestedGuests > maxGuests) {
+      if (requestedGuestsForDates > maxGuests) {
         throw new ExpressError(
           400,
           `Guest count cannot exceed the listing capacity of ${maxGuests}.`
@@ -569,7 +579,7 @@ async function getListingDetails(id, rawQuery = {}, options = {}) {
         );
       }
 
-      const availability = await bookingService.checkAvailability(
+      return bookingService.queryDateAvailabilityForListing(
         listing._id,
         checkInRaw,
         checkOutRaw,
@@ -578,7 +588,20 @@ async function getListingDetails(id, rawQuery = {}, options = {}) {
           maxStayNights: taxConfig.maxStayNights,
         }
       );
+    })();
+  }
 
+  const [blockedDates, dateCheckSettled] = await Promise.all([
+    blockedPromise,
+    dateCheckPromise.then(
+      (value) => ({ ok: true, value }),
+      (err) => ({ ok: false, err })
+    ),
+  ]);
+
+  if (hasAnyDateInput) {
+    if (dateCheckSettled.ok) {
+      const availability = dateCheckSettled.value;
       nights = availability.nights;
       availabilityCheck = {
         checked: true,
@@ -587,14 +610,14 @@ async function getListingDetails(id, rawQuery = {}, options = {}) {
         checkIn: availability.checkInStr,
         checkOut: availability.checkOutStr,
         nights: availability.nights,
-        guests: requestedGuests,
+        guests: requestedGuestsForDates,
         maxGuests,
         error: "",
         message: availability.available
-          ? `Dates are available for ${availability.nights} ${availability.nights === 1 ? "night" : "nights"} (${requestedGuests} ${requestedGuests === 1 ? "guest" : "guests"}). Availability is re-verified atomically when creating a reservation.`
+          ? `Dates are available for ${availability.nights} ${availability.nights === 1 ? "night" : "nights"} (${requestedGuestsForDates} ${requestedGuestsForDates === 1 ? "guest" : "guests"}). Availability is re-verified atomically when creating a reservation.`
           : "Selected dates overlap an existing active reservation. Please select another date range.",
       };
-    } catch (err) {
+    } else {
       let safeGuests = 1;
       try {
         if (guestsRaw) {
@@ -616,7 +639,8 @@ async function getListingDetails(id, rawQuery = {}, options = {}) {
         nights,
         guests: safeGuests,
         maxGuests,
-        error: err?.message || "Invalid availability search dates.",
+        error:
+          dateCheckSettled.err?.message || "Invalid availability search dates.",
         message: "",
       };
     }
@@ -677,7 +701,9 @@ async function getListingAvailability(id, rawQuery = {}, options = {}) {
     "guest count"
   );
 
-  const listing = await Listing.findById(id, "_id price maxGuests");
+  const listing = await Listing.findById(id, "_id price maxGuests", {
+    lean: true,
+  });
   if (!listing) {
     throw new ExpressError(404, "Listing Not Found ❌");
   }
@@ -685,9 +711,6 @@ async function getListingAvailability(id, rawQuery = {}, options = {}) {
   const taxConfig = resolveTaxConfig(options?.taxConfig || env.pricing);
   const maxGuests = bookingService.resolveListingMaxGuests(listing);
   const todayStr = formatCalendarDate(getTodayUtcMidnight(options?.now));
-  const blockedDates = await bookingService.getListingBlockedDates(listing._id, {
-    now: options?.now,
-  });
 
   const guests = guestsRaw ? bookingService.parseGuestCount(guestsRaw) : 1;
   if (guests > maxGuests) {
@@ -698,6 +721,10 @@ async function getListingAvailability(id, rawQuery = {}, options = {}) {
   }
 
   if (!checkInRaw && !checkOutRaw) {
+    const blockedDates = await bookingService.queryBlockedDatesForListing(
+      listing._id,
+      { now: options?.now }
+    );
     return {
       listingId: String(listing._id),
       checked: false,
@@ -719,15 +746,20 @@ async function getListingAvailability(id, rawQuery = {}, options = {}) {
     );
   }
 
-  const availability = await bookingService.checkAvailability(
-    listing._id,
-    checkInRaw,
-    checkOutRaw,
-    {
+  const [blockedDates, availability] = await Promise.all([
+    bookingService.queryBlockedDatesForListing(listing._id, {
       now: options?.now,
-      maxStayNights: taxConfig.maxStayNights,
-    }
-  );
+    }),
+    bookingService.queryDateAvailabilityForListing(
+      listing._id,
+      checkInRaw,
+      checkOutRaw,
+      {
+        now: options?.now,
+        maxStayNights: taxConfig.maxStayNights,
+      }
+    ),
+  ]);
 
   const pricing = calculatePriceBreakdown({
     nightlyPrice: listing.price,

@@ -111,6 +111,8 @@
                           src="<%= item.image.url %>"
                           alt="<%= item.title %>"
                           class="dashboard-thumb"
+                          loading="lazy"
+                          decoding="async"
                         />
                       <% } else { %>
                         <div class="dashboard-thumb-fallback">

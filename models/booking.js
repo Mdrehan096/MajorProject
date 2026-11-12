@@ -217,6 +217,7 @@ const bookingSchema = new Schema(
 
 bookingSchema.index({ listing: 1, status: 1, checkIn: 1, checkOut: 1 });
 bookingSchema.index({ guest: 1, createdAt: -1, _id: -1 });
+bookingSchema.index({ host: 1, createdAt: -1, _id: -1 });
 bookingSchema.index({ host: 1, status: 1, createdAt: -1, _id: -1 });
 bookingSchema.index({ bookingReference: 1 }, { unique: true });
 

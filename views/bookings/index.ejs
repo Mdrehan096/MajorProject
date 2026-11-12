@@ -146,7 +146,7 @@
                 <div>
                   <div class="mb-3">
                     <% if (imageUrl) { %>
-                      <img src="<%= imageUrl %>" alt="<%= title %>" class="dashboard-thumb" />
+                      <img src="<%= imageUrl %>" alt="<%= title %>" class="dashboard-thumb" loading="lazy" decoding="async" />
                     <% } else { %>
                       <div class="dashboard-thumb-fallback">
                         <span class="small">No property image available</span>

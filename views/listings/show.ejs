@@ -147,6 +147,7 @@
             src="<%= listing.image.url %>"
             class="show-img"
             alt="<%= listing.title %>"
+            decoding="async"
             data-listing-hero-img
           />
           <div class="show-img-fallback d-none" data-listing-hero-fallback>
@@ -656,5 +657,5 @@
   </div>
 </div>
 
-<script src="/js/map.js"></script>
-<script src="/js/listingDetails.js"></script>
+<script defer src="/js/map.js"></script>
+<script defer src="/js/listingDetails.js"></script>

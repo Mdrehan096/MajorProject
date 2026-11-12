@@ -63,6 +63,8 @@ const listingSchema = new Schema({
 listingSchema.index({ price: 1, _id: 1 });
 listingSchema.index({ category: 1, _id: -1 });
 listingSchema.index({ category: 1, price: 1, _id: 1 });
+listingSchema.index({ owner: 1, _id: -1 });
+listingSchema.index({ reviews: 1 });
 
 listingSchema.post("findOneAndDelete", async (listing) => {
   if (listing) {
