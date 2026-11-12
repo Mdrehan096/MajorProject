@@ -256,7 +256,9 @@ body {
   padding-right: 0;
 }
 
+.badge.detail-badge,
 .detail-badge {
+  --bs-badge-color: #222222;
   background-color: #f8f9fa;
   border: 1px solid #e9ecef;
   color: #222222;

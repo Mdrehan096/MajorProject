@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Wanderlust">
+  <rect width="64" height="64" rx="14" fill="#fe424d" />
+  <circle cx="32" cy="32" r="20" fill="none" stroke="#ffffff" stroke-width="3.5" />
+  <polygon points="32,14 39,32 32,29 25,32" fill="#ffffff" />
+  <polygon points="32,50 39,32 32,35 25,32" fill="#ffd6d9" />
+  <circle cx="32" cy="32" r="2.6" fill="#fe424d" />
+</svg>
+
