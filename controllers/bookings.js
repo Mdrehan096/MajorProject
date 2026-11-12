@@ -55,17 +55,21 @@ module.exports.createBooking = async (req, res, next) => {
   const guestId = req.user?._id;
 
   if (req.bookingValidationError) {
-    const reviewData = await bookingService.getBookingReviewDetails(
-      req.params.id,
-      { checkIn, checkOut, guests },
-      { actorId: guestId }
-    );
-    return res.status(400).render("bookings/new.ejs", {
-      ...reviewData,
-      pageTitle: `Review Booking — ${reviewData.listing.title}`,
-      errorMessage: req.bookingValidationError,
-      formatINR,
-    });
+    try {
+      const reviewData = await bookingService.getBookingReviewDetails(
+        req.params.id,
+        { checkIn, checkOut, guests },
+        { actorId: guestId }
+      );
+      return res.status(400).render("bookings/new.ejs", {
+        ...reviewData,
+        pageTitle: `Review Booking — ${reviewData.listing.title}`,
+        errorMessage: req.bookingValidationError,
+        formatINR,
+      });
+    } catch (renderErr) {
+      return next(renderErr);
+    }
   }
 
   try {
@@ -262,24 +266,28 @@ module.exports.cancelGuestBooking = async (req, res, next) => {
   const reason = req.validatedBookingCancellation?.reason ?? "";
 
   if (req.bookingCancelValidationError) {
-    const booking = await bookingService.findBookingById(bookingId, {
-      actorId: guestId,
-      role: "guest",
-    });
-    if (!booking) {
-      return next(new ExpressError(404, "Booking Not Found"));
+    try {
+      const booking = await bookingService.findBookingById(bookingId, {
+        actorId: guestId,
+        role: "guest",
+      });
+      if (!booking) {
+        return next(new ExpressError(404, "Booking Not Found"));
+      }
+      return res
+        .status(400)
+        .render(
+          "bookings/show.ejs",
+          buildBookingShowLocals(
+            booking,
+            guestId,
+            req.bookingCancelValidationError,
+            reason
+          )
+        );
+    } catch (renderErr) {
+      return next(renderErr);
     }
-    return res
-      .status(400)
-      .render(
-        "bookings/show.ejs",
-        buildBookingShowLocals(
-          booking,
-          guestId,
-          req.bookingCancelValidationError,
-          reason
-        )
-      );
   }
 
   try {
