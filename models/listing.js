@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const Review = require("./review.js");
-const { required } = require("joi");
+const { LISTING_CATEGORY_SLUGS } = require("../utils/listingOptions.js");
 
 const listingSchema = new Schema({
   title: {
@@ -16,6 +16,10 @@ const listingSchema = new Schema({
   price: Number,
   location: String,
   country: String,
+  category: {
+    type: String,
+    enum: [...LISTING_CATEGORY_SLUGS],
+  },
   reviews: [
     {
       type: mongoose.Schema.Types.ObjectId,
@@ -39,6 +43,10 @@ const listingSchema = new Schema({
     },
   },
 });
+
+listingSchema.index({ price: 1, _id: 1 });
+listingSchema.index({ category: 1, _id: -1 });
+listingSchema.index({ category: 1, price: 1, _id: 1 });
 
 listingSchema.post("findOneAndDelete", async (listing) => {
   if (listing) {

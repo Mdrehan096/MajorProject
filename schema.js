@@ -1,4 +1,5 @@
 const Joi = require("joi");
+const { LISTING_CATEGORY_SLUGS } = require("./utils/listingOptions.js");
 
 module.exports.listingSchema = Joi.object({
   title: Joi.string().trim().required(),
@@ -7,6 +8,11 @@ module.exports.listingSchema = Joi.object({
   price: Joi.number().min(0).required(),
   country: Joi.string().trim().required(),
   location: Joi.string().trim().required(),
+  category: Joi.string()
+    .trim()
+    .lowercase()
+    .valid(...LISTING_CATEGORY_SLUGS, "")
+    .optional(),
 });
 
 module.exports.reviewSchema = Joi.object({

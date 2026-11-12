@@ -1,5 +1,6 @@
 const crypto = require("node:crypto");
 const safeJson = require("../utils/safeJson.js");
+const { getDefaultListingQuery } = require("../utils/listingOptions.js");
 
 function securityHeadersMiddleware(isProduction = false) {
   return (req, res, next) => {
@@ -44,6 +45,7 @@ function attachLocals(req, res, next) {
   res.locals.error = req.flash("error");
   res.locals.currUser = req.user;
   res.locals.safeJson = safeJson;
+  res.locals.listingQuery = getDefaultListingQuery();
   next();
 }
 

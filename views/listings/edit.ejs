@@ -48,6 +48,18 @@
               required />
             <div class="invalid-feedback">country name should be valid</div>
           </div>
+
+          <div class="mb-3 col-md-4">
+            <label for="category" class="form-label">Category</label>
+            <select id="category" name="listing[category]" class="form-select">
+              <option value="">No category</option>
+              <% for (const category of (typeof categories !== "undefined" && Array.isArray(categories) ? categories : [])) { %>
+                <option value="<%= category.slug %>" <%= listing.category === category.slug ? 'selected' : '' %>>
+                  <%= category.label %>
+                </option>
+              <% } %>
+            </select>
+          </div>
         </div>
 
         <div class="mb-3">

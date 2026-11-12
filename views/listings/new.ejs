@@ -91,6 +91,16 @@
         <div class="invalid-feedback">location should be valid</div>
       </div>
 
+      <div class="mb-3">
+        <label for="category" class="form-label">Category</label>
+        <select id="category" name="listing[category]" class="form-select">
+          <option value="">Select a category (optional)</option>
+          <% for (const category of (typeof categories !== "undefined" && Array.isArray(categories) ? categories : [])) { %>
+            <option value="<%= category.slug %>"><%= category.label %></option>
+          <% } %>
+        </select>
+      </div>
+
       <br /><br />
 
       <button class="btn btn-dark add-btn">Add</button>

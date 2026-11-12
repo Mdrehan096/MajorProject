@@ -3,6 +3,17 @@ const Listing = require("../models/listing");
 const ExpressError = require("../utils/ExpressError.js");
 const { mapToken, geocodeLocation } = require("../config/mapbox.js");
 const { safeDestroyCloudinaryImage } = require("../utils/cloudinaryCleanup.js");
+const {
+  DEFAULT_PAGE,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  MAX_PAGE,
+  MAX_SEARCH_LENGTH,
+  LISTING_CATEGORIES,
+  LISTING_CATEGORY_MAP,
+  SORT_OPTIONS,
+  SORT_OPTION_MAP,
+} = require("../utils/listingOptions.js");
 
 const ALLOWED_LISTING_FIELDS = new Set([
   "title",
@@ -11,6 +22,7 @@ const ALLOWED_LISTING_FIELDS = new Set([
   "price",
   "country",
   "location",
+  "category",
 ]);
 const REQUIRED_LISTING_STRING_FIELDS = [
   "title",
@@ -118,7 +130,214 @@ function validateListingPayload(listingData) {
   }
   normalized.price = parsedPrice;
 
+  const hasCategoryField =
+    Object.prototype.hasOwnProperty.call(listingData, "category") &&
+    listingData.category !== undefined;
+  normalized.hasCategoryField = hasCategoryField;
+  if (hasCategoryField) {
+    if (typeof listingData.category !== "string") {
+      throw new ExpressError(400, '"category" must be a string');
+    }
+    const trimmedCategory = listingData.category.trim().toLowerCase();
+    if (trimmedCategory !== "") {
+      if (!LISTING_CATEGORY_MAP.has(trimmedCategory)) {
+        throw new ExpressError(400, "Invalid listing category");
+      }
+      normalized.category = trimmedCategory;
+    }
+  }
+
   return normalized;
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function readScalarQueryValue(query, key) {
+  if (!Object.prototype.hasOwnProperty.call(query, key)) {
+    return undefined;
+  }
+  return query[key];
+}
+
+function parseOptionalNonNegativePrice(rawValue, label) {
+  if (rawValue === undefined) {
+    return undefined;
+  }
+  if (typeof rawValue === "number") {
+    if (!Number.isFinite(rawValue) || rawValue < 0) {
+      throw new ExpressError(400, `Invalid ${label}`);
+    }
+    return rawValue;
+  }
+  if (typeof rawValue !== "string") {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  const trimmed = rawValue.trim();
+  if (trimmed === "") {
+    return undefined;
+  }
+  if (!/^(?:\d+|\d*\.\d+)$/.test(trimmed)) {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  return parsed;
+}
+
+function parsePositiveIntegerQueryParam(rawValue, defaultValue, maxValue, label) {
+  if (rawValue === undefined) {
+    return defaultValue;
+  }
+  if (typeof rawValue === "number") {
+    if (!Number.isSafeInteger(rawValue) || rawValue < 1 || rawValue > maxValue) {
+      throw new ExpressError(
+        400,
+        `${label} must be an integer between 1 and ${maxValue}`
+      );
+    }
+    return rawValue;
+  }
+  if (typeof rawValue !== "string") {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  const trimmed = rawValue.trim();
+  if (trimmed === "") {
+    return defaultValue;
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maxValue) {
+    throw new ExpressError(
+      400,
+      `${label} must be an integer between 1 and ${maxValue}`
+    );
+  }
+  return parsed;
+}
+
+function normalizeDiscoveryQuery(rawQuery = {}) {
+  if (rawQuery !== undefined && !isPlainObject(rawQuery)) {
+    throw new ExpressError(400, "Invalid listing query parameters");
+  }
+  const query = rawQuery || {};
+
+  const rawQ = readScalarQueryValue(query, "q");
+  let q = "";
+  if (rawQ !== undefined) {
+    if (typeof rawQ !== "string") {
+      throw new ExpressError(400, "Invalid search query");
+    }
+    q = rawQ.trim();
+    if (q.length > MAX_SEARCH_LENGTH) {
+      throw new ExpressError(
+        400,
+        `Search query cannot exceed ${MAX_SEARCH_LENGTH} characters`
+      );
+    }
+  }
+
+  const rawCategory = readScalarQueryValue(query, "category");
+  let category = "";
+  if (rawCategory !== undefined) {
+    if (typeof rawCategory !== "string") {
+      throw new ExpressError(400, "Invalid listing category filter");
+    }
+    const normalizedCat = rawCategory.trim().toLowerCase();
+    if (normalizedCat && normalizedCat !== "all") {
+      if (!LISTING_CATEGORY_MAP.has(normalizedCat)) {
+        throw new ExpressError(400, "Invalid listing category filter");
+      }
+      category = normalizedCat;
+    }
+  }
+
+  const minPrice = parseOptionalNonNegativePrice(
+    readScalarQueryValue(query, "minPrice"),
+    "minimum price"
+  );
+  const maxPrice = parseOptionalNonNegativePrice(
+    readScalarQueryValue(query, "maxPrice"),
+    "maximum price"
+  );
+  if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
+    throw new ExpressError(
+      400,
+      "Minimum price cannot be greater than maximum price"
+    );
+  }
+
+  const rawSort = readScalarQueryValue(query, "sort");
+  let sort = "newest";
+  if (rawSort !== undefined) {
+    if (typeof rawSort !== "string") {
+      throw new ExpressError(400, "Invalid sort option");
+    }
+    const normalizedSort = rawSort.trim().toLowerCase();
+    if (normalizedSort !== "") {
+      if (!SORT_OPTION_MAP.has(normalizedSort)) {
+        throw new ExpressError(400, "Invalid sort option");
+      }
+      sort = normalizedSort;
+    }
+  }
+
+  const page = parsePositiveIntegerQueryParam(
+    readScalarQueryValue(query, "page"),
+    DEFAULT_PAGE,
+    MAX_PAGE,
+    "Page"
+  );
+  const limit = parsePositiveIntegerQueryParam(
+    readScalarQueryValue(query, "limit"),
+    DEFAULT_LIMIT,
+    MAX_LIMIT,
+    "Page size"
+  );
+
+  return {
+    q,
+    category,
+    minPrice,
+    maxPrice,
+    sort,
+    page,
+    limit,
+  };
+}
+
+function buildListingFilter(filters) {
+  const filter = {};
+
+  if (filters.q) {
+    const regex = new RegExp(escapeRegex(filters.q), "i");
+    filter.$or = [
+      { title: regex },
+      { location: regex },
+      { country: regex },
+    ];
+  }
+
+  if (filters.category) {
+    filter.category = filters.category;
+  }
+
+  if (filters.minPrice !== undefined || filters.maxPrice !== undefined) {
+    filter.price = {};
+    if (filters.minPrice !== undefined) {
+      filter.price.$gte = filters.minPrice;
+    }
+    if (filters.maxPrice !== undefined) {
+      filter.price.$lte = filters.maxPrice;
+    }
+  }
+
+  return filter;
 }
 
 function extractImageData(file) {
@@ -178,6 +397,42 @@ async function getAllListings() {
   return Listing.find({});
 }
 
+async function searchListings(rawQuery = {}) {
+  const filters = normalizeDiscoveryQuery(rawQuery);
+  const filter = buildListingFilter(filters);
+  const sortMeta = SORT_OPTION_MAP.get(filters.sort);
+
+  const totalCount = await Listing.countDocuments(filter);
+  const totalPages = totalCount > 0 ? Math.ceil(totalCount / filters.limit) : 1;
+  const skip = (filters.page - 1) * filters.limit;
+
+  let listings = [];
+  if (totalCount > 0 && filters.page <= totalPages) {
+    listings = await Listing.find(filter)
+      .sort(sortMeta.sortSpec)
+      .skip(skip)
+      .limit(filters.limit);
+  }
+
+  return {
+    listings,
+    filters,
+    pagination: {
+      page: filters.page,
+      limit: filters.limit,
+      totalCount,
+      totalPages,
+      hasPrev: filters.page > 1,
+      hasNext: filters.page < totalPages,
+      startItem: listings.length > 0 ? skip + 1 : 0,
+      endItem: listings.length > 0 ? skip + listings.length : 0,
+      isOutOfRangePage: totalCount > 0 && filters.page > totalPages,
+    },
+    categories: LISTING_CATEGORIES,
+    sortOptions: SORT_OPTIONS,
+  };
+}
+
 async function getListingById(id) {
   validateListingId(id);
 
@@ -216,6 +471,7 @@ async function getListingForEdit(id) {
   return {
     listing,
     originalImageUrl: buildOriginalImageUrl(listing.image),
+    categories: LISTING_CATEGORIES,
   };
 }
 
@@ -233,7 +489,7 @@ async function createListing(listingData, options = {}) {
       throw new ExpressError(400, "Listing image is required");
     }
 
-    const { title, description, price, country, location } =
+    const { title, description, price, country, location, category } =
       validateListingPayload(listingData);
 
     if (!ownerId) {
@@ -245,7 +501,7 @@ async function createListing(listingData, options = {}) {
 
     const geometry = await geocodeLocation(location);
 
-    const newListing = new Listing({
+    const listingDoc = {
       title,
       description,
       price,
@@ -254,7 +510,12 @@ async function createListing(listingData, options = {}) {
       owner: ownerId,
       image: uploadedImage,
       geometry,
-    });
+    };
+    if (category !== undefined) {
+      listingDoc.category = category;
+    }
+
+    const newListing = new Listing(listingDoc);
 
     await newListing.save();
     return newListing;
@@ -284,8 +545,15 @@ async function updateListing(id, listingData, options = {}) {
       throw new ExpressError(400, "Invalid listing image");
     }
 
-    const { title, description, price, country, location } =
-      validateListingPayload(listingData);
+    const {
+      title,
+      description,
+      price,
+      country,
+      location,
+      category,
+      hasCategoryField,
+    } = validateListingPayload(listingData);
 
     const listing = await Listing.findById(id);
     if (!listing) {
@@ -302,6 +570,9 @@ async function updateListing(id, listingData, options = {}) {
     listing.price = price;
     listing.country = country;
     listing.location = location;
+    if (hasCategoryField) {
+      listing.category = category;
+    }
 
     const hasNewFile = Boolean(uploadedImage?.url && uploadedImage?.filename);
     if (hasNewFile) {
@@ -346,10 +617,19 @@ async function deleteListing(id) {
 }
 
 module.exports = {
+  DEFAULT_PAGE,
+  DEFAULT_LIMIT,
+  MAX_LIMIT,
+  MAX_SEARCH_LENGTH,
+  LISTING_CATEGORIES,
+  SORT_OPTIONS,
+  normalizeDiscoveryQuery,
+  buildListingFilter,
   validateListingId,
   buildMapListing,
   buildOriginalImageUrl,
   getAllListings,
+  searchListings,
   getListingById,
   getListingDetails,
   getListingForEdit,

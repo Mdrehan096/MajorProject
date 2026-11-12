@@ -1,12 +1,22 @@
 const listingService = require("../services/listingService.js");
+const { buildListingsUrl } = require("../utils/listingOptions.js");
 
 module.exports.index = async (req, res) => {
-  const allListings = await listingService.getAllListings();
-  res.render("listings/index.ejs", { allListings });
+  const discoveryData = await listingService.searchListings(req.query);
+  res.locals.listingQuery = discoveryData.filters;
+
+  res.render("listings/index.ejs", {
+    allListings: discoveryData.listings,
+    ...discoveryData,
+    buildListingsUrl: (overrides = {}) =>
+      buildListingsUrl(discoveryData.filters, overrides),
+  });
 };
 
 module.exports.renderNewForm = (req, res) => {
-  res.render("listings/new.ejs");
+  res.render("listings/new.ejs", {
+    categories: listingService.LISTING_CATEGORIES,
+  });
 };
 
 module.exports.showListing = async (req, res) => {

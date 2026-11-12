@@ -6,24 +6,25 @@
         padding: 0 1rem 0 1rem;
         }
        
-        .btn-search:hover {
-        background-color: #fe424d;
+        .search-btn:hover {
+        background-color: #e03742;
         color: #fff;
         }
         
-        .search-btn  i {
+        .search-btn i {
           display: inline;
           margin-right: 0.5rem;
         }
 
-        .search-inp{
+        .search-inp {
           border-radius: 25px;
-          padding: 0.5rem 3rem 0.5rem 3rem;
+          padding: 0.5rem 1.5rem;
           font-size: 1rem;
         }
 
 </style>
 
+<% const navQuery = typeof listingQuery !== "undefined" && listingQuery ? listingQuery : {}; %>
 <nav class="navbar navbar-expand-md bg-body-light border-bottom sticky-top">
   <div class="container-fluid">
     <a class="navbar-brand" href="/listings"><i class="fa-solid fa-compass"></i></a>
@@ -40,12 +41,35 @@
         <a class="nav-link" href="/listings">Explore</a>
       </div>
 
-      <diV class="navbar-nav ms-auto">
-         <form class="d-flex" role="search">
-         <input class="form-control me-2 search-inp" type="search" placeholder="Search destinations"/>
+      <div class="navbar-nav ms-auto">
+         <form class="d-flex my-2 my-md-0" role="search" action="/listings" method="GET">
+         <input
+           class="form-control me-2 search-inp"
+           type="search"
+           name="q"
+           value="<%= navQuery.q || '' %>"
+           placeholder="Search destinations"
+           aria-label="Search destinations"
+           maxlength="100"
+         />
+         <% if (navQuery.category) { %>
+         <input type="hidden" name="category" value="<%= navQuery.category %>" />
+         <% } %>
+         <% if (navQuery.minPrice !== undefined && navQuery.minPrice !== "") { %>
+         <input type="hidden" name="minPrice" value="<%= navQuery.minPrice %>" />
+         <% } %>
+         <% if (navQuery.maxPrice !== undefined && navQuery.maxPrice !== "") { %>
+         <input type="hidden" name="maxPrice" value="<%= navQuery.maxPrice %>" />
+         <% } %>
+         <% if (navQuery.sort && navQuery.sort !== "newest") { %>
+         <input type="hidden" name="sort" value="<%= navQuery.sort %>" />
+         <% } %>
+         <% if (navQuery.limit && Number(navQuery.limit) !== 12) { %>
+         <input type="hidden" name="limit" value="<%= navQuery.limit %>" />
+         <% } %>
          <button class="btn search-btn" type="submit"><i class="fa-brands fa-searchengin"></i>Search</button>
          </form>
-      </diV>
+      </div>
 
        <div class="navbar-nav ms-auto">
         <a class="nav-link" href="/listings/new">Airbnb your Home</a>

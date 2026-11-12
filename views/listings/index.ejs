@@ -1,143 +1,317 @@
-   <% layout("/layout/boilerplate") %>
-    
-    <!-- <h3>All Listings</h3> -->
-     <!-- <form method="GET" action="/listings/new">
-      <button>Create New Listing</button>
-    </form> -->
+<% layout("/layout/boilerplate") %>
+<%
+  const activeFilters = typeof filters !== "undefined" && filters
+    ? filters
+    : { q: "", category: "", minPrice: undefined, maxPrice: undefined, sort: "newest", page: 1, limit: 12 };
+  const pageInfo = typeof pagination !== "undefined" && pagination
+    ? pagination
+    : {
+        page: 1,
+        limit: 12,
+        totalCount: Array.isArray(allListings) ? allListings.length : 0,
+        totalPages: 1,
+        hasPrev: false,
+        hasNext: false,
+        startItem: Array.isArray(allListings) && allListings.length > 0 ? 1 : 0,
+        endItem: Array.isArray(allListings) ? allListings.length : 0,
+        isOutOfRangePage: false,
+      };
+  const categoryList = typeof categories !== "undefined" && Array.isArray(categories) ? categories : [];
+  const sortList = typeof sortOptions !== "undefined" && Array.isArray(sortOptions) ? sortOptions : [];
+  const buildUrl = typeof buildListingsUrl === "function" ? buildListingsUrl : () => "/listings";
+  const hasActiveFilters = Boolean(
+    activeFilters.q ||
+    activeFilters.category ||
+    activeFilters.minPrice !== undefined ||
+    activeFilters.maxPrice !== undefined ||
+    (activeFilters.sort && activeFilters.sort !== "newest")
+  );
+  const categoryLabelMap = new Map(categoryList.map((cat) => [cat.slug, cat.label]));
+  const presetLimits = [6, 12, 24, 48];
+%>
 
-    <style>
-      #filters {
-             display: flex;
-             flex-wrap: wrap;
-             align-items: center;
-      }
-      .filter {
-        text-align: center;
-        margin-right: 2rem;
-        margin-top: 1rem;
-        opacity: 0.7;
-      }
+<div id="filters" aria-label="Property categories">
+  <a
+    href="<%= buildUrl({ category: '', page: 1 }) %>"
+    class="filter <%= !activeFilters.category ? 'active' : '' %>"
+    aria-current="<%= !activeFilters.category ? 'true' : 'false' %>"
+  >
+    <div><i class="fa-solid fa-border-all"></i></div>
+    <p>All</p>
+  </a>
 
-      .filter:hover{
-        opacity: 1;
-        cursor: pointer;
-      }
-
-      .filter p {
-           font-size: 0.8rem;
-      }
-
-      .tax-info {
-        display: none;
-      }
-
-      .tax-toggle{
-        border: 1px solid black;
-        border-radius: 1rem;
-        height: 3.25rem;
-        padding: 1rem;
-        margin-left: 2rem;
-        display: flex;
-        align-items: center;
-      }
-
-
-
-    </style>
-
-  <div id="filters">
-       <div class="filter">
-           <div><i class="fa-solid fa-fire"></i></div>
-           <p> Trending</p>
-       </div>
-
-       <div class="filter">
-           <div><i class="fa-solid fa-bed"></i></div>
-           <p> Rooms</p>
-       </div>
-
-              <div class="filter">
-           <div><i class="fa-solid fa-mountain-city"></i></div>
-           <p> Iconic cities</p>
-       </div>
-
-       <div class="filter">
-           <div><i class="fa-solid fa-mountain"></i></i></div>
-           <p> mountains</p>
-       </div>
-
-       <div class="filter">
-           <div><i class="fa-brands fa-fort-awesome"></i></div>
-           <p> castals</p>
-       </div>
-
-       <div class="filter">
-           <div><i class="fa-solid fa-person-swimming"></i></div>
-           <p>Amezing pools</p>
-       </div>
-
-              <div class="filter">
-           <div><i class="fa-solid fa-campground"></i></div>
-           <p>Camping</p>
-       </div>
-
-       <div class="filter">
-           <div><i class="fa-solid fa-cow"></i></div>
-           <p>farms</p>
-       </div>
-
-       <div class="filter">
-           <div><i class="fa-solid fa-snowflake"></i></div>
-           <p>Artic</p>
-       </div>
-
-              <div class="filter">
-           <div><i class="fa-solid fa-igloo"></i></div>
-           <p>Domes</p>
-       </div>
-
-       <div class="tax-toggle">
-       <div class="form-check-reverse form-switch">
-       <input class="form-check-input" type="checkbox" role="switch" id="switchCheckDefault">
-       <label class="form-check-label" for="switchCheckDefault">Display total after taxes</label>
-      </div>
-      </div>
-
-  </div>
-
-  <div class="row row-cols-lg-3 row-cols-md-3 row-cols-sm-1 mt-3">
-    <% for(let listing of allListings) { %>
-      <a href="/listings/<%= listing._id %>">
-      <div class="card col listing-card">
-      <img src="<%= listing.image?.url || '' %>" 
-      class="card-img-top" 
-      alt="listing image" 
-      style="height: 20rem"
-      />
-      <div class="card-img-overlay"></div>
-  <div class="card-body">
-    <p class="card-text">
-     <b> <%= listing.title %> <br/> </b> 
-      &#8377; <%= (listing.price ?? 0).toLocaleString("en-IN") %> /night
-      <i class="tax-info"> &nbsp; &nbsp; +18% GST</i>
-    </p>
-  </div>
-</div>    
-</a>
-  <%}%>
- 
+  <% for (const category of categoryList) { %>
+    <a
+      href="<%= buildUrl({ category: activeFilters.category === category.slug ? '' : category.slug, page: 1 }) %>"
+      class="filter <%= activeFilters.category === category.slug ? 'active' : '' %>"
+      aria-current="<%= activeFilters.category === category.slug ? 'true' : 'false' %>"
+    >
+      <div><i class="<%= category.icon %>"></i></div>
+      <p><%= category.label %></p>
+    </a>
+  <% } %>
 </div>
 
-<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
-  let taxSwitch = document.getElementById("switchCheckDefault");
-  taxSwitch.addEventListener("click", ()=>{
-    let taxInfo = document.getElementsByClassName("tax-info");
-    for(info of taxInfo){
-      if(info.style.display != "inline"){
-         info.style.display = "inline";
-      }else{
-        info.style.display = "none";
+<form action="/listings" method="GET" class="discovery-bar rounded-4 p-3 mt-2" id="listingDiscoveryForm">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-6 col-lg-3">
+      <label for="filter-q" class="form-label form-label-sm mb-1 fw-semibold">Search</label>
+      <input
+        id="filter-q"
+        name="q"
+        type="search"
+        value="<%= activeFilters.q || '' %>"
+        maxlength="100"
+        placeholder="Title, location, or country"
+        class="form-control form-control-sm"
+      />
+    </div>
+
+    <div class="col-6 col-md-3 col-lg-2">
+      <label for="filter-category" class="form-label form-label-sm mb-1 fw-semibold">Category</label>
+      <select id="filter-category" name="category" class="form-select form-select-sm">
+        <option value="">All Categories</option>
+        <% for (const category of categoryList) { %>
+          <option value="<%= category.slug %>" <%= activeFilters.category === category.slug ? 'selected' : '' %>>
+            <%= category.label %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="col-6 col-md-3 col-lg-2">
+      <label for="filter-min-price" class="form-label form-label-sm mb-1 fw-semibold">Min Price (&#8377;)</label>
+      <input
+        id="filter-min-price"
+        name="minPrice"
+        type="number"
+        min="0"
+        step="any"
+        placeholder="0"
+        value="<%= activeFilters.minPrice !== undefined ? activeFilters.minPrice : '' %>"
+        class="form-control form-control-sm"
+      />
+    </div>
+
+    <div class="col-6 col-md-3 col-lg-2">
+      <label for="filter-max-price" class="form-label form-label-sm mb-1 fw-semibold">Max Price (&#8377;)</label>
+      <input
+        id="filter-max-price"
+        name="maxPrice"
+        type="number"
+        min="0"
+        step="any"
+        placeholder="Any"
+        value="<%= activeFilters.maxPrice !== undefined ? activeFilters.maxPrice : '' %>"
+        class="form-control form-control-sm"
+      />
+    </div>
+
+    <div class="col-6 col-md-3 col-lg-2">
+      <label for="filter-sort" class="form-label form-label-sm mb-1 fw-semibold">Sort By</label>
+      <select id="filter-sort" name="sort" class="form-select form-select-sm">
+        <% for (const opt of sortList) { %>
+          <option value="<%= opt.key %>" <%= activeFilters.sort === opt.key ? 'selected' : '' %>>
+            <%= opt.label %>
+          </option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="col-6 col-md-3 col-lg-1">
+      <label for="filter-limit" class="form-label form-label-sm mb-1 fw-semibold">Per Page</label>
+      <select id="filter-limit" name="limit" class="form-select form-select-sm">
+        <% if (!presetLimits.includes(pageInfo.limit)) { %>
+          <option value="<%= pageInfo.limit %>" selected><%= pageInfo.limit %></option>
+        <% } %>
+        <% for (const size of presetLimits) { %>
+          <option value="<%= size %>" <%= pageInfo.limit === size ? 'selected' : '' %>><%= size %></option>
+        <% } %>
+      </select>
+    </div>
+
+    <div class="col-12 d-flex flex-wrap gap-2 mt-2 pt-1 justify-content-between align-items-center">
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm search-btn px-3">Apply Filters</button>
+        <% if (hasActiveFilters || pageInfo.page > 1 || pageInfo.limit !== 12) { %>
+          <a href="/listings" class="btn btn-sm btn-outline-secondary">Clear Filters</a>
+        <% } else { %>
+          <a href="/listings" class="btn btn-sm btn-outline-secondary">Reset</a>
+        <% } %>
+      </div>
+
+      <div class="tax-toggle">
+        <div class="form-check-reverse form-switch m-0">
+          <input class="form-check-input" type="checkbox" role="switch" id="switchCheckDefault">
+          <label class="form-check-label" for="switchCheckDefault">Display total after taxes</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center mt-3 gap-2">
+  <p class="text-muted small mb-0" id="resultsSummary">
+    <% if (allListings.length > 0) { %>
+      Showing <strong><%= pageInfo.startItem %>&ndash;<%= pageInfo.endItem %></strong> of <strong><%= pageInfo.totalCount %></strong> <%= pageInfo.totalCount === 1 ? 'listing' : 'listings' %>
+    <% } else if (pageInfo.totalCount > 0) { %>
+      <strong><%= pageInfo.totalCount %></strong> <%= pageInfo.totalCount === 1 ? 'listing' : 'listings' %> total (none on page <%= pageInfo.page %>)
+    <% } else { %>
+      No listings matched
+    <% } %>
+  </p>
+
+  <% if (hasActiveFilters) { %>
+    <div class="d-flex flex-wrap gap-1 align-items-center small">
+      <% if (activeFilters.q) { %>
+        <span class="badge text-bg-light border">Search: <%= activeFilters.q %></span>
+      <% } %>
+      <% if (activeFilters.category) { %>
+        <span class="badge text-bg-light border">Category: <%= categoryLabelMap.get(activeFilters.category) || activeFilters.category %></span>
+      <% } %>
+      <% if (activeFilters.minPrice !== undefined) { %>
+        <span class="badge text-bg-light border">Min &#8377;<%= activeFilters.minPrice.toLocaleString("en-IN") %></span>
+      <% } %>
+      <% if (activeFilters.maxPrice !== undefined) { %>
+        <span class="badge text-bg-light border">Max &#8377;<%= activeFilters.maxPrice.toLocaleString("en-IN") %></span>
+      <% } %>
+    </div>
+  <% } %>
+</div>
+
+<% if (allListings.length === 0) { %>
+  <div class="card border rounded-4 p-5 text-center my-4 bg-light">
+    <% if (pageInfo.isOutOfRangePage) { %>
+      <h5 class="mb-2">No listings on page <%= pageInfo.page %></h5>
+      <p class="text-muted mb-3">
+        There <%= pageInfo.totalPages === 1 ? 'is' : 'are' %> currently <%= pageInfo.totalPages %> <%= pageInfo.totalPages === 1 ? 'page' : 'pages' %> of matching listings.
+      </p>
+      <div class="d-flex justify-content-center gap-2">
+        <a href="<%= buildUrl({ page: 1 }) %>" class="btn btn-dark btn-sm">Go to Page 1</a>
+        <a href="/listings" class="btn btn-outline-secondary btn-sm">Clear Filters</a>
+      </div>
+    <% } else { %>
+      <h5 class="mb-2">No listings found</h5>
+      <p class="text-muted mb-3">Try broadening your search, changing the category, or widening your price range.</p>
+      <div>
+        <a href="/listings" class="btn btn-dark btn-sm">Clear All Filters</a>
+      </div>
+    <% } %>
+  </div>
+<% } else { %>
+  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4 mt-1">
+    <% for (let listing of allListings) { %>
+      <div class="col">
+        <a href="/listings/<%= listing._id %>" class="listing-link">
+          <div class="card listing-card h-100">
+            <img
+              src="<%= listing.image?.url || '' %>"
+              class="card-img-top"
+              alt="<%= listing.title %>"
+              style="height: 20rem"
+            />
+            <div class="card-img-overlay"></div>
+            <div class="card-body pt-2">
+              <p class="card-text mb-1">
+                <b><%= listing.title %></b><br />
+                <span class="text-muted small"><%= listing.location %><% if (listing.country) { %>, <%= listing.country %><% } %></span><br />
+                <% if (listing.category && categoryLabelMap.has(listing.category)) { %>
+                  <span class="badge text-bg-light border my-1"><%= categoryLabelMap.get(listing.category) %></span><br />
+                <% } %>
+                &#8377; <%= (listing.price ?? 0).toLocaleString("en-IN") %> /night
+                <i class="tax-info"> &nbsp;&nbsp; +18% GST</i>
+              </p>
+            </div>
+          </div>
+        </a>
+      </div>
+    <% } %>
+  </div>
+<% } %>
+
+<% if (pageInfo.totalPages > 1) { %>
+  <%
+    const pagesToRender = [];
+    if (pageInfo.totalPages <= 7) {
+      for (let p = 1; p <= pageInfo.totalPages; p++) pagesToRender.push(p);
+    } else {
+      const candidates = new Set([
+        1,
+        pageInfo.totalPages,
+        pageInfo.page - 1,
+        pageInfo.page,
+        pageInfo.page + 1,
+      ]);
+      const sorted = Array.from(candidates)
+        .filter((p) => p >= 1 && p <= pageInfo.totalPages)
+        .sort((a, b) => a - b);
+      for (let i = 0; i < sorted.length; i++) {
+        if (i > 0 && sorted[i] - sorted[i - 1] > 1) {
+          pagesToRender.push("ellipsis");
+        }
+        pagesToRender.push(sorted[i]);
       }
     }
-  })
+    const prevPageTarget = Math.max(1, Math.min(pageInfo.page - 1, pageInfo.totalPages));
+  %>
+  <nav aria-label="Listing pagination" class="my-4 d-flex justify-content-center">
+    <ul class="pagination mb-0">
+      <li class="page-item <%= pageInfo.hasPrev ? '' : 'disabled' %>">
+        <% if (pageInfo.hasPrev) { %>
+          <a class="page-link" href="<%= buildUrl({ page: prevPageTarget }) %>" aria-label="Previous page">Previous</a>
+        <% } else { %>
+          <span class="page-link" aria-disabled="true">Previous</span>
+        <% } %>
+      </li>
+
+      <% for (const item of pagesToRender) { %>
+        <% if (item === "ellipsis") { %>
+          <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+        <% } else { %>
+          <li class="page-item <%= item === pageInfo.page ? 'active' : '' %>">
+            <% if (item === pageInfo.page) { %>
+              <span class="page-link" aria-current="page"><%= item %></span>
+            <% } else { %>
+              <a class="page-link" href="<%= buildUrl({ page: item }) %>"><%= item %></a>
+            <% } %>
+          </li>
+        <% } %>
+      <% } %>
+
+      <li class="page-item <%= pageInfo.hasNext ? '' : 'disabled' %>">
+        <% if (pageInfo.hasNext) { %>
+          <a class="page-link" href="<%= buildUrl({ page: pageInfo.page + 1 }) %>" aria-label="Next page">Next</a>
+        <% } else { %>
+          <span class="page-link" aria-disabled="true">Next</span>
+        <% } %>
+      </li>
+    </ul>
+  </nav>
+<% } %>
+
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+  (() => {
+    const taxSwitch = document.getElementById("switchCheckDefault");
+    if (taxSwitch) {
+      taxSwitch.addEventListener("change", () => {
+        const taxInfo = document.getElementsByClassName("tax-info");
+        for (const info of taxInfo) {
+          info.style.display = taxSwitch.checked ? "inline" : "none";
+        }
+      });
+    }
+
+    const sortSelect = document.getElementById("filter-sort");
+    const limitSelect = document.getElementById("filter-limit");
+    if (sortSelect && sortSelect.form) {
+      sortSelect.addEventListener("change", () => {
+        sortSelect.form.submit();
+      });
+    }
+    if (limitSelect && limitSelect.form) {
+      limitSelect.addEventListener("change", () => {
+        limitSelect.form.submit();
+      });
+    }
+  })();
 </script>
