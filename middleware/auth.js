@@ -56,11 +56,31 @@ async function isReviewAuthor(req, res, next) {
     ) {
       return next(new ExpressError(400, "Invalid ID"));
     }
-    const review = await Review.findById(reviewId);
-    if (!review) {
+
+    const [listing, review] = await Promise.all([
+      Listing.findById(id),
+      Review.findById(reviewId),
+    ]);
+
+    if (!listing) {
+      req.flash("error", "Listing you requested for does not exist");
+      return res.redirect("/listings");
+    }
+
+    const belongsToListing =
+      review &&
+      Array.isArray(listing.reviews) &&
+      listing.reviews.some((rid) =>
+        typeof rid?.equals === "function"
+          ? rid.equals(review._id)
+          : String(rid) === String(review._id)
+      );
+
+    if (!review || !belongsToListing) {
       req.flash("error", "Review you requested for does not exist");
       return res.redirect(`/listings/${id}`);
     }
+
     if (
       !review.author ||
       !res.locals.currUser ||
