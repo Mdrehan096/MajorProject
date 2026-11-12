@@ -6,6 +6,7 @@ const {
   profileUpdateSchema,
   bookingSchema,
   bookingCancellationSchema,
+  hostBookingStatusSchema,
 } = require("../schema.js");
 const { cleanupFileIfUncommitted } = require("../utils/cloudinaryCleanup.js");
 
@@ -180,6 +181,50 @@ function validateBookingCancellation(req, res, next) {
   return next();
 }
 
+function validateHostBookingStatusUpdate(req, res, next) {
+  const bookingId = req.params?.id;
+  if (typeof bookingId !== "string" || !/^[0-9a-fA-F]{24}$/.test(bookingId)) {
+    return next(new ExpressError(400, "Invalid Booking ID"));
+  }
+
+  if (req.body !== undefined && req.body !== null && !isPlainObject(req.body)) {
+    return next(new ExpressError(400, "Invalid booking status update payload."));
+  }
+
+  const body = req.body || {};
+  if (
+    !isStrictScalarOrUndefined(body.status) ||
+    !isStrictScalarOrUndefined(body.reason)
+  ) {
+    return next(new ExpressError(400, "Invalid booking status update format."));
+  }
+
+  const sanitizedInput = {
+    status:
+      body.status === undefined || body.status === null
+        ? ""
+        : String(body.status).trim().toLowerCase(),
+    reason:
+      body.reason === undefined || body.reason === null
+        ? ""
+        : String(body.reason).trim(),
+  };
+
+  const { error, value } = hostBookingStatusSchema.validate(sanitizedInput);
+  if (error) {
+    req.validatedHostStatusUpdate = sanitizedInput;
+    req.hostStatusValidationError = error.details[0].message;
+    return next();
+  }
+
+  req.validatedHostStatusUpdate = {
+    status: value.status,
+    reason: value.reason || "",
+  };
+  req.hostStatusValidationError = null;
+  return next();
+}
+
 module.exports = {
   validateListing,
   validateReview,
@@ -188,5 +233,6 @@ module.exports = {
   validateProfileUpdate,
   validateBooking,
   validateBookingCancellation,
+  validateHostBookingStatusUpdate,
 };
 

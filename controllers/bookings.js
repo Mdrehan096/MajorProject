@@ -152,11 +152,18 @@ function buildBookingShowLocals(
       ? bookingService.isGuestCancellable(booking)
       : ["pending", "confirmed"].includes(booking.status));
 
+  const hostActions =
+    viewerRole === "host" &&
+    typeof bookingService.getAllowedHostActions === "function"
+      ? bookingService.getAllowedHostActions(booking)
+      : { canConfirm: false, canCancel: false, canComplete: false };
+
   return {
     pageTitle: `Booking ${booking.bookingReference}`,
     booking,
     viewerRole,
     canGuestCancel,
+    hostActions,
     actionError,
     cancellationReasonDraft,
     checkInIso: formatCalendarDate(booking.checkIn),
@@ -164,7 +171,9 @@ function buildBookingShowLocals(
     checkInFormatted: formatUtcDisplayDate(booking.checkIn),
     checkOutFormatted: formatUtcDisplayDate(booking.checkOut),
     createdAtFormatted: formatCreatedTimestamp(booking.createdAt),
+    confirmedAtFormatted: formatCreatedTimestamp(booking.confirmedAt),
     cancelledAtFormatted: formatCreatedTimestamp(booking.cancelledAt),
+    completedAtFormatted: formatCreatedTimestamp(booking.completedAt),
     formatINR,
     paymentNotice: bookingService.PAYMENT_UNSUPPORTED_NOTICE,
   };
@@ -299,6 +308,156 @@ module.exports.cancelGuestBooking = async (req, res, next) => {
         .render(
           "bookings/show.ejs",
           buildBookingShowLocals(booking, guestId, err.message, reason)
+        );
+    }
+
+    return next(err);
+  }
+};
+
+module.exports.listHostBookings = async (req, res) => {
+  const rawQuery = req.query || {};
+  if (!isPlainQuery(rawQuery)) {
+    throw new ExpressError(400, "Invalid host booking filter parameters.");
+  }
+
+  // Strictly derive host identity from req.user._id; ignore any host/user/owner query parameters.
+  const statusParam = readScalarQueryParam(rawQuery, "status");
+  const listingIdParam = readScalarQueryParam(rawQuery, "listingId");
+  const pageParam = readScalarQueryParam(rawQuery, "page");
+  const limitParam = readScalarQueryParam(rawQuery, "limit");
+
+  const result = await bookingService.getHostBookings(req.user?._id, {
+    status: statusParam,
+    listingId: listingIdParam,
+    page: pageParam,
+    limit: limitParam !== undefined ? limitParam : 8,
+  });
+
+  const bookingCards = (result.bookings || []).map((booking) => ({
+    booking,
+    checkInIso: formatCalendarDate(booking.checkIn),
+    checkOutIso: formatCalendarDate(booking.checkOut),
+    checkInFormatted: formatUtcDisplayDate(booking.checkIn),
+    checkOutFormatted: formatUtcDisplayDate(booking.checkOut),
+    createdAtFormatted: formatCreatedTimestamp(booking.createdAt),
+    hostActions:
+      typeof bookingService.getAllowedHostActions === "function"
+        ? bookingService.getAllowedHostActions(booking)
+        : { canConfirm: false, canCancel: false, canComplete: false },
+  }));
+
+  const activeStatus = result.activeStatus || "";
+  const activeListingId = result.activeListingId || "";
+  const buildHostBookingsUrl = (overrides = {}) => {
+    const params = new URLSearchParams();
+    const nextStatus = Object.prototype.hasOwnProperty.call(overrides, "status")
+      ? overrides.status
+      : activeStatus;
+    const nextListingId = Object.prototype.hasOwnProperty.call(overrides, "listingId")
+      ? overrides.listingId
+      : activeListingId;
+    const nextPage = Object.prototype.hasOwnProperty.call(overrides, "page")
+      ? overrides.page
+      : result.pageInfo?.page;
+
+    if (nextStatus) {
+      params.set("status", String(nextStatus));
+    }
+    if (nextListingId) {
+      params.set("listingId", String(nextListingId));
+    }
+    if (nextPage && Number(nextPage) > 1) {
+      params.set("page", String(nextPage));
+    }
+    const qs = params.toString();
+    return qs ? `/host/bookings?${qs}` : "/host/bookings";
+  };
+
+  res.render("host/bookings.ejs", {
+    pageTitle: "Host Bookings",
+    bookings: result.bookings,
+    bookingCards,
+    stats: result.stats,
+    ownedListings: result.ownedListings || [],
+    activeStatus,
+    activeListingId,
+    pageInfo: result.pageInfo,
+    buildHostBookingsUrl,
+    formatINR,
+    paymentNotice: bookingService.PAYMENT_UNSUPPORTED_NOTICE,
+  });
+};
+
+module.exports.updateHostBookingStatus = async (req, res, next) => {
+  const bookingId = req.params.id;
+  const hostId = req.user?._id;
+  const payload = req.validatedHostStatusUpdate || {};
+  const targetStatus = payload.status || "";
+  const reason = payload.reason || "";
+
+  if (req.hostStatusValidationError) {
+    try {
+      const booking = await bookingService.findBookingById(bookingId, {
+        actorId: hostId,
+        role: "host",
+      });
+      if (!booking) {
+        return next(new ExpressError(404, "Booking Not Found"));
+      }
+      return res
+        .status(400)
+        .render(
+          "bookings/show.ejs",
+          buildBookingShowLocals(
+            booking,
+            hostId,
+            req.hostStatusValidationError,
+            reason
+          )
+        );
+    } catch (err) {
+      return next(err);
+    }
+  }
+
+  try {
+    const updatedBooking = await bookingService.updateBookingStatus(
+      bookingId,
+      targetStatus,
+      hostId,
+      { reason }
+    );
+
+    if (updatedBooking.status === "confirmed") {
+      req.flash(
+        "success",
+        "Reservation confirmed. Payment has not been collected for this reservation."
+      );
+    } else if (updatedBooking.status === "cancelled") {
+      req.flash(
+        "success",
+        "Reservation cancelled by host. Reserved calendar dates have been released. Payment has not been collected."
+      );
+    } else if (updatedBooking.status === "completed") {
+      req.flash("success", "Reservation marked as completed.");
+    }
+
+    return res.redirect(`/bookings/${updatedBooking._id}`);
+  } catch (err) {
+    if (err instanceof ExpressError && err.statusCode === 400) {
+      const booking = await bookingService.findBookingById(bookingId, {
+        actorId: hostId,
+        role: "host",
+      });
+      if (!booking) {
+        return next(new ExpressError(404, "Booking Not Found"));
+      }
+      return res
+        .status(400)
+        .render(
+          "bookings/show.ejs",
+          buildBookingShowLocals(booking, hostId, err.message, reason)
         );
     }
 

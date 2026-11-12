@@ -5,6 +5,7 @@ const {
   isLoggedIn,
   validateBooking,
   validateBookingCancellation,
+  validateHostBookingStatusUpdate,
 } = require("../middleware");
 const bookingController = require("../controllers/bookings.js");
 
@@ -20,6 +21,14 @@ router.post(
   isLoggedIn,
   validateBookingCancellation,
   wrapAsync(bookingController.cancelGuestBooking)
+);
+
+router.get("/host/bookings", isLoggedIn, wrapAsync(bookingController.listHostBookings));
+router.post(
+  "/host/bookings/:id/status",
+  isLoggedIn,
+  validateHostBookingStatusUpdate,
+  wrapAsync(bookingController.updateHostBookingStatus)
 );
 
 module.exports = router;

@@ -44,3 +44,8 @@ module.exports.bookingSchema = Joi.object({
 module.exports.bookingCancellationSchema = Joi.object({
   reason: Joi.string().trim().max(300).allow("").optional(),
 });
+
+module.exports.hostBookingStatusSchema = Joi.object({
+  status: Joi.string().trim().lowercase().valid("confirmed", "cancelled", "completed").required(),
+  reason: Joi.string().trim().max(300).allow("").optional(),
+});

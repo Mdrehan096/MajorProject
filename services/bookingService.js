@@ -594,7 +594,7 @@ async function findBookingById(bookingId, options = {}) {
   }
 
   const booking = await Booking.findById(bookingId)
-    .populate("listing", "title location country image category price maxGuests")
+    .populate("listing", "title location country image category price maxGuests owner")
     .populate("guest", "username displayName location")
     .populate("host", "username displayName location");
 
@@ -605,9 +605,14 @@ async function findBookingById(bookingId, options = {}) {
   if (actorId !== undefined) {
     const bookingGuestId = String(booking.guest?._id || booking.guest || "");
     const bookingHostId = String(booking.host?._id || booking.host || "");
+    const listingOwnerId = booking.listing?.owner
+      ? String(booking.listing.owner._id || booking.listing.owner)
+      : "";
     const actorStr = String(actorId);
     const isGuest = bookingGuestId === actorStr;
-    const isHost = bookingHostId === actorStr;
+    const isHost =
+      bookingHostId === actorStr &&
+      (!booking.listing || listingOwnerId === actorStr);
 
     if (role === "guest" && !isGuest) {
       throw new ExpressError(403, "You are not authorized to access this booking.");
@@ -806,6 +811,35 @@ async function getGuestBookings(guestId, options = {}) {
   };
 }
 
+function getAllowedHostActions(booking) {
+  if (!booking || !booking.listing) {
+    return {
+      canConfirm: false,
+      canCancel: false,
+      canComplete: false,
+    };
+  }
+  if (booking.status === "pending") {
+    return {
+      canConfirm: true,
+      canCancel: true,
+      canComplete: false,
+    };
+  }
+  if (booking.status === "confirmed") {
+    return {
+      canConfirm: false,
+      canCancel: true,
+      canComplete: true,
+    };
+  }
+  return {
+    canConfirm: false,
+    canCancel: false,
+    canComplete: false,
+  };
+}
+
 async function getHostBookings(hostId, options = {}) {
   validateObjectId(hostId, "Host ID");
   const resolvedOpts = validateOptions(
@@ -814,24 +848,156 @@ async function getHostBookings(hostId, options = {}) {
     "host booking list options"
   );
 
-  const filter = { host: hostId };
   const statusFilter = normalizeStatusFilter(resolvedOpts.status);
+  let requestedListingId = "";
+  if (resolvedOpts.listingId !== undefined && resolvedOpts.listingId !== "") {
+    validateObjectId(resolvedOpts.listingId, "Listing ID");
+    requestedListingId = String(resolvedOpts.listingId);
+  }
+
+  // Derive host bookings strictly from listings currently owned by this host.
+  const ownedListings = await Listing.find({ owner: hostId })
+    .select("_id title location country")
+    .sort({ _id: -1 })
+    .lean();
+
+  const ownedIdStrings = new Set(ownedListings.map((l) => String(l._id)));
+  const emptyResult = (page = 1, limit = DEFAULT_BOOKINGS_PAGE_SIZE) => ({
+    bookings: [],
+    stats: buildBookingStats([]),
+    activeStatus: statusFilter || "",
+    activeListingId: requestedListingId,
+    ownedListings,
+    pageInfo: {
+      page,
+      limit,
+      totalCount: 0,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPrevPage: false,
+      isOutOfRangePage: false,
+    },
+  });
+
+  const hasPagination =
+    resolvedOpts.page !== undefined || resolvedOpts.limit !== undefined;
+  const page = hasPagination
+    ? parsePositiveIntOption(resolvedOpts.page, 1, 10000, "Page number")
+    : 1;
+  const limit = hasPagination
+    ? parsePositiveIntOption(
+        resolvedOpts.limit,
+        DEFAULT_BOOKINGS_PAGE_SIZE,
+        MAX_BOOKINGS_PAGE_SIZE,
+        "Bookings per page"
+      )
+    : DEFAULT_BOOKINGS_PAGE_SIZE;
+
+  if (ownedListings.length === 0) {
+    return emptyResult(page, limit);
+  }
+
+  const baseFilter = {
+    host: hostId,
+    listing: { $in: ownedListings.map((l) => l._id) },
+  };
+
+  if (requestedListingId) {
+    if (!ownedIdStrings.has(requestedListingId)) {
+      const allStatusDocs = await Booking.find(baseFilter).select("status -_id").lean();
+      return {
+        bookings: [],
+        stats: buildBookingStats(allStatusDocs),
+        activeStatus: statusFilter || "",
+        activeListingId: requestedListingId,
+        ownedListings,
+        pageInfo: {
+          page,
+          limit,
+          totalCount: 0,
+          totalPages: 1,
+          hasNextPage: false,
+          hasPrevPage: false,
+          isOutOfRangePage: false,
+        },
+      };
+    }
+    baseFilter.listing = requestedListingId;
+  }
+
+  const filter = { ...baseFilter };
   if (statusFilter) {
     filter.status = statusFilter;
   }
-  if (resolvedOpts.listingId !== undefined) {
-    validateObjectId(resolvedOpts.listingId, "Listing ID");
-    filter.listing = resolvedOpts.listingId;
+
+  if (!hasPagination) {
+    const [bookings, allStatusDocs] = await Promise.all([
+      Booking.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .populate("listing", "title location country image price maxGuests owner")
+        .populate("guest", "username displayName location"),
+      statusFilter
+        ? Booking.find({ host: hostId, listing: { $in: ownedListings.map((l) => l._id) } })
+            .select("status -_id")
+            .lean()
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      bookings,
+      stats: buildBookingStats(allStatusDocs || bookings),
+      activeStatus: statusFilter || "",
+      activeListingId: requestedListingId,
+      ownedListings,
+      pageInfo: {
+        page: 1,
+        limit: bookings.length || DEFAULT_BOOKINGS_PAGE_SIZE,
+        totalCount: bookings.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPrevPage: false,
+        isOutOfRangePage: false,
+      },
+    };
   }
 
-  const bookings = await Booking.find(filter)
-    .sort({ createdAt: -1, _id: -1 })
-    .populate("listing", "title location country image price maxGuests")
-    .populate("guest", "username displayName location");
+  const overallFilter = {
+    host: hostId,
+    listing: { $in: ownedListings.map((l) => l._id) },
+  };
+  const [totalCount, allStatusDocs] = await Promise.all([
+    Booking.countDocuments(filter),
+    Booking.find(overallFilter).select("status -_id").lean(),
+  ]);
+
+  const totalPages = totalCount === 0 ? 1 : Math.ceil(totalCount / limit);
+  const isOutOfRangePage = totalCount > 0 && page > totalPages;
+  const skip = (page - 1) * limit;
+
+  const bookings = isOutOfRangePage
+    ? []
+    : await Booking.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("listing", "title location country image price maxGuests owner")
+        .populate("guest", "username displayName location");
 
   return {
     bookings,
-    stats: buildBookingStats(bookings),
+    stats: buildBookingStats(allStatusDocs),
+    activeStatus: statusFilter || "",
+    activeListingId: requestedListingId,
+    ownedListings,
+    pageInfo: {
+      page,
+      limit,
+      totalCount,
+      totalPages,
+      hasNextPage: !isOutOfRangePage && page < totalPages,
+      hasPrevPage: page > 1 && totalCount > 0,
+      isOutOfRangePage,
+    },
   };
 }
 
@@ -972,7 +1138,7 @@ async function updateBookingStatus(
     const listing = await Listing.findById(booking.listing, "_id owner").session(
       session
     );
-    if (listing && listing.owner && String(listing.owner) !== String(actorId)) {
+    if (!listing || !listing.owner || String(listing.owner) !== String(actorId)) {
       throw new ExpressError(
         403,
         "Only the current listing owner can manage this reservation."
@@ -1186,6 +1352,7 @@ module.exports = {
   findBookingById,
   getGuestBookings,
   getHostBookings,
+  getAllowedHostActions,
   isGuestCancellable,
   cancelBooking,
   updateBookingStatus,
