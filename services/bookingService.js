@@ -1,0 +1,875 @@
+const crypto = require("node:crypto");
+const mongoose = require("mongoose");
+const Booking = require("../models/booking.js");
+const Listing = require("../models/listing.js");
+const ExpressError = require("../utils/ExpressError.js");
+const { env } = require("../config/env.js");
+const {
+  calculatePriceBreakdown,
+  resolveTaxConfig,
+  isValidNonNegativePrice,
+} = require("../utils/pricing.js");
+const {
+  getTodayUtcMidnight,
+  formatCalendarDate,
+  normalizeStayDates,
+} = require("../utils/bookingDates.js");
+
+const {
+  BOOKING_STATUSES,
+  ACTIVE_BOOKING_STATUSES,
+  TERMINAL_BOOKING_STATUSES,
+} = Booking;
+
+const ALLOWED_CREATE_PAYLOAD_FIELDS = new Set([
+  "checkIn",
+  "checkOut",
+  "guests",
+]);
+const ALLOWED_CREATE_OPTIONS = new Set([
+  "guestId",
+  "taxConfig",
+  "now",
+  "maxRetries",
+]);
+const ALLOWED_AVAILABILITY_OPTIONS = new Set([
+  "session",
+  "excludeBookingId",
+  "now",
+  "allowPastCheckIn",
+  "maxStayNights",
+]);
+const ALLOWED_LISTING_BLOCKED_OPTIONS = new Set(["now", "fromDate"]);
+const ALLOWED_FIND_OPTIONS = new Set(["actorId", "role"]);
+const ALLOWED_LIST_OPTIONS = new Set(["status", "listingId"]);
+const ALLOWED_CANCEL_OPTIONS = new Set(["role", "reason", "now", "maxRetries"]);
+const ALLOWED_STATUS_UPDATE_OPTIONS = new Set([
+  "reason",
+  "now",
+  "maxRetries",
+]);
+const ALLOWED_HOST_TARGET_STATUSES = new Set([
+  "confirmed",
+  "cancelled",
+  "completed",
+]);
+const MAX_CANCELLATION_REASON_LENGTH = 300;
+const PAYMENT_UNSUPPORTED_NOTICE =
+  "Reservation request only — online payment processing is not enabled.";
+
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isStrictObjectId(id) {
+  if (typeof id === "string") {
+    return /^[0-9a-fA-F]{24}$/.test(id);
+  }
+  return (
+    Boolean(id) &&
+    typeof id === "object" &&
+    (id instanceof mongoose.Types.ObjectId || id._bsontype === "ObjectId") &&
+    mongoose.Types.ObjectId.isValid(id)
+  );
+}
+
+function validateObjectId(id, label = "ID") {
+  if (!isStrictObjectId(id)) {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+}
+
+function validateOptions(options, allowedKeys, label = "booking options") {
+  if (options === undefined) {
+    return {};
+  }
+  if (!isPlainObject(options)) {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  const unexpectedKeys = Object.keys(options).filter(
+    (key) => !allowedKeys.has(key)
+  );
+  if (unexpectedKeys.length > 0) {
+    throw new ExpressError(
+      400,
+      `Unexpected option field(s): ${unexpectedKeys.join(", ")}`
+    );
+  }
+  return options;
+}
+
+function parseGuestCount(rawGuests) {
+  let parsed;
+  if (typeof rawGuests === "number") {
+    parsed = rawGuests;
+  } else if (typeof rawGuests === "string") {
+    const trimmed = rawGuests.trim();
+    if (!/^\d+$/.test(trimmed)) {
+      throw new ExpressError(
+        400,
+        "Guest count must be a positive whole number."
+      );
+    }
+    parsed = Number(trimmed);
+  } else {
+    throw new ExpressError(400, "Guest count must be a positive whole number.");
+  }
+
+  const maxLimit = env.booking?.maxGuestsUpperLimit || 50;
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maxLimit) {
+    throw new ExpressError(
+      400,
+      `Guest count must be an integer between 1 and ${maxLimit}.`
+    );
+  }
+
+  return parsed;
+}
+
+function resolveListingMaxGuests(listing) {
+  const upperLimit = env.booking?.maxGuestsUpperLimit || 50;
+  const fallback = env.booking?.defaultMaxGuests || 8;
+  const rawMax = listing?.maxGuests;
+
+  if (Number.isInteger(rawMax) && rawMax >= 1 && rawMax <= upperLimit) {
+    return rawMax;
+  }
+  return fallback;
+}
+
+function validateBookingCreatePayload(payload) {
+  if (!isPlainObject(payload)) {
+    throw new ExpressError(400, "Booking details are required.");
+  }
+
+  const unexpectedKeys = Object.keys(payload).filter(
+    (key) => !ALLOWED_CREATE_PAYLOAD_FIELDS.has(key)
+  );
+  if (unexpectedKeys.length > 0) {
+    throw new ExpressError(
+      400,
+      `Unexpected field(s) in booking payload: ${unexpectedKeys.join(", ")}`
+    );
+  }
+
+  const guests = parseGuestCount(payload.guests);
+  return {
+    checkInRaw: payload.checkIn,
+    checkOutRaw: payload.checkOut,
+    guests,
+  };
+}
+
+function generateBookingReference(referenceDate = new Date()) {
+  const ref =
+    referenceDate instanceof Date && !Number.isNaN(referenceDate.getTime())
+      ? referenceDate
+      : new Date();
+  const dateStamp = formatCalendarDate(ref).replace(/-/g, "");
+  const suffix = crypto.randomBytes(4).toString("hex").toUpperCase();
+  return `WL-${dateStamp}-${suffix}`;
+}
+
+function isTransientTransactionError(err) {
+  if (!err || typeof err !== "object") {
+    return false;
+  }
+  if (typeof err.hasErrorLabel === "function") {
+    if (
+      err.hasErrorLabel("TransientTransactionError") ||
+      err.hasErrorLabel("UnknownTransactionCommitResult")
+    ) {
+      return true;
+    }
+  }
+  if (Array.isArray(err.errorLabels)) {
+    return (
+      err.errorLabels.includes("TransientTransactionError") ||
+      err.errorLabels.includes("UnknownTransactionCommitResult")
+    );
+  }
+  return false;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runBookingTransactionWithRetry(work, maxRetriesInput) {
+  const configuredMax = env.booking?.maxTxRetries || 4;
+  const maxAttempts =
+    Number.isInteger(maxRetriesInput) && maxRetriesInput >= 1 && maxRetriesInput <= 10
+      ? maxRetriesInput
+      : configuredMax;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const session = await mongoose.startSession();
+    try {
+      session.startTransaction({
+        readConcern: { level: "snapshot" },
+        writeConcern: { w: "majority" },
+      });
+
+      const result = await work(session);
+
+      while (true) {
+        try {
+          await session.commitTransaction();
+          return result;
+        } catch (commitErr) {
+          if (
+            typeof commitErr?.hasErrorLabel === "function" &&
+            commitErr.hasErrorLabel("UnknownTransactionCommitResult")
+          ) {
+            continue;
+          }
+          throw commitErr;
+        }
+      }
+    } catch (err) {
+      const canAbort =
+        typeof session.inTransaction !== "function" || session.inTransaction();
+      if (canAbort && typeof session.abortTransaction === "function") {
+        await session.abortTransaction().catch(() => {});
+      }
+
+      if (attempt < maxAttempts && isTransientTransactionError(err)) {
+        const jitterMs = Math.min(25 * 2 ** (attempt - 1) + Math.floor(Math.random() * 25), 350);
+        await delay(jitterMs);
+        continue;
+      }
+      throw err;
+    } finally {
+      await session.endSession();
+    }
+  }
+}
+
+function calculateBookingPrice(nightlyPrice, nights, options = {}) {
+  const resolvedOpts = validateOptions(
+    options,
+    new Set(["taxConfig"]),
+    "pricing options"
+  );
+
+  if (!isValidNonNegativePrice(nightlyPrice)) {
+    throw new ExpressError(
+      400,
+      "This listing does not have a valid bookable nightly price."
+    );
+  }
+
+  const taxConfig = resolveTaxConfig(resolvedOpts.taxConfig || env.pricing);
+  if (
+    !Number.isSafeInteger(nights) ||
+    nights < 1 ||
+    nights > taxConfig.maxStayNights
+  ) {
+    throw new ExpressError(
+      400,
+      `Stay duration must be an integer between 1 and ${taxConfig.maxStayNights} nights.`
+    );
+  }
+
+  const breakdown = calculatePriceBreakdown({
+    nightlyPrice,
+    nights,
+    taxConfig,
+  });
+
+  if (!breakdown.isPriceAvailable) {
+    throw new ExpressError(
+      400,
+      "This listing does not have a valid bookable nightly price."
+    );
+  }
+
+  return {
+    nightlyPrice: breakdown.basePrice,
+    nights: breakdown.nights,
+    subtotal: breakdown.subtotal,
+    taxAmount: breakdown.taxAmount,
+    taxRatePercent: breakdown.taxRatePercent,
+    taxLabel: breakdown.taxLabel,
+    taxMode: breakdown.taxMode,
+    taxDescription: breakdown.taxDescription,
+    totalPrice: breakdown.estimatedTotal,
+    currency: env.booking?.currency || "INR",
+    formatted: {
+      nightlyPrice: breakdown.formattedBasePrice,
+      subtotal: breakdown.formattedSubtotal,
+      taxAmount: breakdown.formattedTaxAmount,
+      totalPrice: breakdown.formattedEstimatedTotal,
+    },
+  };
+}
+
+async function checkAvailability(
+  listingId,
+  checkInRaw,
+  checkOutRaw,
+  options = {}
+) {
+  validateObjectId(listingId, "Listing ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_AVAILABILITY_OPTIONS,
+    "availability options"
+  );
+
+  if (resolvedOpts.excludeBookingId !== undefined) {
+    validateObjectId(resolvedOpts.excludeBookingId, "Booking ID");
+  }
+
+  const taxConfig = resolveTaxConfig(env.pricing);
+  const maxStayNights = Number.isInteger(resolvedOpts.maxStayNights)
+    ? resolvedOpts.maxStayNights
+    : taxConfig.maxStayNights;
+
+  const { checkIn, checkOut, checkInStr, checkOutStr, nights } =
+    normalizeStayDates(checkInRaw, checkOutRaw, {
+      maxNights: maxStayNights,
+      now: resolvedOpts.now,
+      allowPastCheckIn: Boolean(resolvedOpts.allowPastCheckIn),
+    });
+
+  const listingQuery = resolvedOpts.session
+    ? Listing.findById(listingId, "_id owner price maxGuests", {
+        session: resolvedOpts.session,
+      })
+    : Listing.findById(listingId, "_id owner price maxGuests");
+  const listing = await listingQuery;
+  if (!listing) {
+    throw new ExpressError(404, "Listing Not Found ❌");
+  }
+
+  const conflictQuery = {
+    listing: listing._id,
+    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+    checkIn: { $lt: checkOut },
+    checkOut: { $gt: checkIn },
+  };
+  if (resolvedOpts.excludeBookingId) {
+    conflictQuery._id = { $ne: resolvedOpts.excludeBookingId };
+  }
+
+  const bookingFinder = resolvedOpts.session
+    ? Booking.findOne(conflictQuery, "_id checkIn checkOut status", {
+        session: resolvedOpts.session,
+      })
+    : Booking.findOne(conflictQuery, "_id checkIn checkOut status");
+  const conflictingBooking = await bookingFinder;
+
+  return {
+    available: !conflictingBooking,
+    listingId: String(listing._id),
+    checkIn,
+    checkOut,
+    checkInStr,
+    checkOutStr,
+    nights,
+    activeStatuses: [...ACTIVE_BOOKING_STATUSES],
+    conflictingBookingId: conflictingBooking ? conflictingBooking._id : null,
+  };
+}
+
+async function getListingBlockedDates(listingId, options = {}) {
+  validateObjectId(listingId, "Listing ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_LISTING_BLOCKED_OPTIONS,
+    "blocked dates options"
+  );
+
+  const listingExists = await Listing.exists({ _id: listingId });
+  if (!listingExists) {
+    throw new ExpressError(404, "Listing Not Found ❌");
+  }
+
+  const todayUtc = getTodayUtcMidnight(resolvedOpts.fromDate || resolvedOpts.now);
+  const bookings = await Booking.find({
+    listing: listingId,
+    status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+    checkOut: { $gt: todayUtc },
+  })
+    .select("checkIn checkOut -_id")
+    .sort({ checkIn: 1 })
+    .lean();
+
+  return bookings.map((b) => ({
+    checkIn: formatCalendarDate(new Date(b.checkIn)),
+    checkOut: formatCalendarDate(new Date(b.checkOut)),
+  }));
+}
+
+function buildBookingListingSnapshot(listing) {
+  return {
+    title: typeof listing.title === "string" && listing.title.trim()
+      ? listing.title.trim()
+      : "Untitled Listing",
+    location: typeof listing.location === "string" ? listing.location.trim() : "",
+    country: typeof listing.country === "string" ? listing.country.trim() : "",
+    imageUrl: typeof listing.image?.url === "string" ? listing.image.url.trim() : "",
+  };
+}
+
+async function createBooking(listingId, payload, options = {}) {
+  validateObjectId(listingId, "Listing ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_CREATE_OPTIONS,
+    "booking options"
+  );
+
+  const { guestId, taxConfig: customTaxConfig, now, maxRetries } = resolvedOpts;
+  if (!guestId) {
+    throw new ExpressError(400, "Guest account is required to create a booking.");
+  }
+  validateObjectId(guestId, "Guest ID");
+
+  const { checkInRaw, checkOutRaw, guests } =
+    validateBookingCreatePayload(payload);
+
+  const resolvedTaxConfig = resolveTaxConfig(customTaxConfig || env.pricing);
+  const { checkIn, checkOut, nights } = normalizeStayDates(
+    checkInRaw,
+    checkOutRaw,
+    {
+      maxNights: resolvedTaxConfig.maxStayNights,
+      now,
+      allowPastCheckIn: false,
+    }
+  );
+
+  return runBookingTransactionWithRetry(async (session) => {
+    // Acquire an exclusive per-listing write lock before reading availability
+    // to eliminate WiredTiger snapshot phantom write-skew under concurrent requests.
+    const listing = await Listing.findOneAndUpdate(
+      { _id: listingId },
+      { $inc: { bookingVersion: 1 } },
+      { session, returnDocument: "after" }
+    );
+
+    if (!listing) {
+      throw new ExpressError(404, "Listing Not Found ❌");
+    }
+
+    if (!listing.owner || !isStrictObjectId(listing.owner)) {
+      throw new ExpressError(
+        400,
+        "This listing does not have a valid host account configured."
+      );
+    }
+
+    if (String(listing.owner) === String(guestId)) {
+      throw new ExpressError(400, "You cannot book your own listing.");
+    }
+
+    const listingMaxGuests = resolveListingMaxGuests(listing);
+    if (guests > listingMaxGuests) {
+      throw new ExpressError(
+        400,
+        `Guest count cannot exceed the listing capacity of ${listingMaxGuests}.`
+      );
+    }
+
+    const pricingSnapshot = calculateBookingPrice(listing.price, nights, {
+      taxConfig: resolvedTaxConfig,
+    });
+
+    const conflictingBooking = await Booking.findOne({
+      listing: listing._id,
+      status: { $in: [...ACTIVE_BOOKING_STATUSES] },
+      checkIn: { $lt: checkOut },
+      checkOut: { $gt: checkIn },
+    }).session(session);
+
+    if (conflictingBooking) {
+      throw new ExpressError(
+        409,
+        "Selected dates are no longer available for this listing."
+      );
+    }
+
+    const newBooking = new Booking({
+      bookingReference: generateBookingReference(now),
+      listing: listing._id,
+      guest: guestId,
+      host: listing.owner,
+      checkIn,
+      checkOut,
+      guests,
+      pricing: {
+        nightlyPrice: pricingSnapshot.nightlyPrice,
+        nights: pricingSnapshot.nights,
+        subtotal: pricingSnapshot.subtotal,
+        taxAmount: pricingSnapshot.taxAmount,
+        taxRatePercent: pricingSnapshot.taxRatePercent,
+        taxLabel: pricingSnapshot.taxLabel,
+        taxMode: pricingSnapshot.taxMode,
+        taxDescription: pricingSnapshot.taxDescription,
+        totalPrice: pricingSnapshot.totalPrice,
+        currency: pricingSnapshot.currency,
+      },
+      listingSnapshot: buildBookingListingSnapshot(listing),
+      status: "pending",
+      paymentNotice: PAYMENT_UNSUPPORTED_NOTICE,
+    });
+
+    await newBooking.save({ session });
+    return newBooking;
+  }, maxRetries);
+}
+
+async function findBookingById(bookingId, options = {}) {
+  validateObjectId(bookingId, "Booking ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_FIND_OPTIONS,
+    "booking lookup options"
+  );
+
+  const { actorId, role } = resolvedOpts;
+  if (actorId !== undefined) {
+    validateObjectId(actorId, "User ID");
+  }
+  if (role !== undefined && !["guest", "host"].includes(role)) {
+    throw new ExpressError(400, "Invalid booking access role.");
+  }
+
+  const booking = await Booking.findById(bookingId)
+    .populate("listing", "title location country image category price maxGuests")
+    .populate("guest", "username displayName location")
+    .populate("host", "username displayName location");
+
+  if (!booking) {
+    return null;
+  }
+
+  if (actorId !== undefined) {
+    const bookingGuestId = String(booking.guest?._id || booking.guest || "");
+    const bookingHostId = String(booking.host?._id || booking.host || "");
+    const actorStr = String(actorId);
+    const isGuest = bookingGuestId === actorStr;
+    const isHost = bookingHostId === actorStr;
+
+    if (role === "guest" && !isGuest) {
+      throw new ExpressError(403, "You are not authorized to access this booking.");
+    }
+    if (role === "host" && !isHost) {
+      throw new ExpressError(403, "You are not authorized to access this booking.");
+    }
+    if (!role && !isGuest && !isHost) {
+      throw new ExpressError(403, "You are not authorized to access this booking.");
+    }
+  }
+
+  return booking;
+}
+
+function buildBookingStats(bookings) {
+  const stats = {
+    total: bookings.length,
+    pendingCount: 0,
+    confirmedCount: 0,
+    cancelledCount: 0,
+    completedCount: 0,
+  };
+
+  for (const booking of bookings) {
+    if (booking.status === "pending") stats.pendingCount += 1;
+    else if (booking.status === "confirmed") stats.confirmedCount += 1;
+    else if (booking.status === "cancelled") stats.cancelledCount += 1;
+    else if (booking.status === "completed") stats.completedCount += 1;
+  }
+  return stats;
+}
+
+function normalizeStatusFilter(rawStatus) {
+  if (rawStatus === undefined || rawStatus === null || rawStatus === "") {
+    return undefined;
+  }
+  if (typeof rawStatus !== "string") {
+    throw new ExpressError(400, "Invalid booking status filter.");
+  }
+  const normalized = rawStatus.trim().toLowerCase();
+  if (!BOOKING_STATUSES.includes(normalized)) {
+    throw new ExpressError(400, "Invalid booking status filter.");
+  }
+  return normalized;
+}
+
+async function getGuestBookings(guestId, options = {}) {
+  validateObjectId(guestId, "Guest ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_LIST_OPTIONS,
+    "guest booking list options"
+  );
+
+  const filter = { guest: guestId };
+  const statusFilter = normalizeStatusFilter(resolvedOpts.status);
+  if (statusFilter) {
+    filter.status = statusFilter;
+  }
+  if (resolvedOpts.listingId !== undefined) {
+    validateObjectId(resolvedOpts.listingId, "Listing ID");
+    filter.listing = resolvedOpts.listingId;
+  }
+
+  const bookings = await Booking.find(filter)
+    .sort({ createdAt: -1, _id: -1 })
+    .populate("listing", "title location country image price maxGuests")
+    .populate("host", "username displayName location");
+
+  return {
+    bookings,
+    stats: buildBookingStats(bookings),
+  };
+}
+
+async function getHostBookings(hostId, options = {}) {
+  validateObjectId(hostId, "Host ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_LIST_OPTIONS,
+    "host booking list options"
+  );
+
+  const filter = { host: hostId };
+  const statusFilter = normalizeStatusFilter(resolvedOpts.status);
+  if (statusFilter) {
+    filter.status = statusFilter;
+  }
+  if (resolvedOpts.listingId !== undefined) {
+    validateObjectId(resolvedOpts.listingId, "Listing ID");
+    filter.listing = resolvedOpts.listingId;
+  }
+
+  const bookings = await Booking.find(filter)
+    .sort({ createdAt: -1, _id: -1 })
+    .populate("listing", "title location country image price maxGuests")
+    .populate("guest", "username displayName location");
+
+  return {
+    bookings,
+    stats: buildBookingStats(bookings),
+  };
+}
+
+function normalizeCancellationReason(rawReason) {
+  if (rawReason === undefined || rawReason === null) {
+    return "";
+  }
+  if (typeof rawReason !== "string") {
+    throw new ExpressError(400, "Cancellation reason must be text.");
+  }
+  const trimmed = rawReason.trim();
+  if (trimmed.length > MAX_CANCELLATION_REASON_LENGTH) {
+    throw new ExpressError(
+      400,
+      `Cancellation reason cannot exceed ${MAX_CANCELLATION_REASON_LENGTH} characters.`
+    );
+  }
+  return trimmed;
+}
+
+async function cancelBooking(bookingId, actorId, options = {}) {
+  validateObjectId(bookingId, "Booking ID");
+  validateObjectId(actorId, "User ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_CANCEL_OPTIONS,
+    "cancellation options"
+  );
+
+  if (
+    resolvedOpts.role !== undefined &&
+    !["guest", "host"].includes(resolvedOpts.role)
+  ) {
+    throw new ExpressError(400, "Invalid cancellation actor role.");
+  }
+
+  const reason = normalizeCancellationReason(resolvedOpts.reason);
+  const actionTimestamp =
+    resolvedOpts.now instanceof Date && !Number.isNaN(resolvedOpts.now.getTime())
+      ? resolvedOpts.now
+      : new Date();
+  const todayUtc = getTodayUtcMidnight(actionTimestamp);
+
+  return runBookingTransactionWithRetry(async (session) => {
+    const booking = await Booking.findById(bookingId).session(session);
+    if (!booking) {
+      throw new ExpressError(404, "Booking Not Found");
+    }
+
+    const isGuest = String(booking.guest) === String(actorId);
+    const isHost = String(booking.host) === String(actorId);
+
+    if (resolvedOpts.role === "guest" && !isGuest) {
+      throw new ExpressError(403, "You are not authorized to cancel this booking.");
+    }
+    if (resolvedOpts.role === "host" && !isHost) {
+      throw new ExpressError(403, "You are not authorized to cancel this booking.");
+    }
+    if (!isGuest && !isHost) {
+      throw new ExpressError(403, "You are not authorized to cancel this booking.");
+    }
+
+    if (booking.status === "cancelled") {
+      throw new ExpressError(400, "This booking is already cancelled.");
+    }
+    if (booking.status === "completed") {
+      throw new ExpressError(400, "Completed bookings cannot be cancelled.");
+    }
+    if (!ACTIVE_BOOKING_STATUSES.includes(booking.status)) {
+      throw new ExpressError(400, "Booking cannot be cancelled in its current state.");
+    }
+    if (
+      booking.status === "confirmed" &&
+      booking.checkOut instanceof Date &&
+      todayUtc.getTime() >= booking.checkOut.getTime()
+    ) {
+      throw new ExpressError(
+        400,
+        "Confirmed stays that have already reached check-out cannot be cancelled."
+      );
+    }
+
+    booking.status = "cancelled";
+    booking.cancelledAt = actionTimestamp;
+    booking.cancelledBy =
+      resolvedOpts.role === "host" || (isHost && !isGuest) ? "host" : "guest";
+    booking.cancellationReason = reason;
+
+    await booking.save({ session });
+    return booking;
+  }, resolvedOpts.maxRetries);
+}
+
+async function updateBookingStatus(
+  bookingId,
+  targetStatus,
+  actorId,
+  options = {}
+) {
+  validateObjectId(bookingId, "Booking ID");
+  validateObjectId(actorId, "Host ID");
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_STATUS_UPDATE_OPTIONS,
+    "status update options"
+  );
+
+  if (typeof targetStatus !== "string" || !targetStatus.trim()) {
+    throw new ExpressError(400, "Target booking status is required.");
+  }
+  const normalizedTarget = targetStatus.trim().toLowerCase();
+  if (!ALLOWED_HOST_TARGET_STATUSES.has(normalizedTarget)) {
+    throw new ExpressError(
+      400,
+      `Invalid target booking status "${normalizedTarget}".`
+    );
+  }
+
+  const reason = normalizeCancellationReason(resolvedOpts.reason);
+  const actionTimestamp =
+    resolvedOpts.now instanceof Date && !Number.isNaN(resolvedOpts.now.getTime())
+      ? resolvedOpts.now
+      : new Date();
+
+  return runBookingTransactionWithRetry(async (session) => {
+    const booking = await Booking.findById(bookingId).session(session);
+    if (!booking) {
+      throw new ExpressError(404, "Booking Not Found");
+    }
+
+    if (String(booking.host) !== String(actorId)) {
+      throw new ExpressError(
+        403,
+        "Only the listing host can update this reservation status."
+      );
+    }
+
+    const listing = await Listing.findById(booking.listing, "_id owner").session(
+      session
+    );
+    if (listing && listing.owner && String(listing.owner) !== String(actorId)) {
+      throw new ExpressError(
+        403,
+        "Only the current listing owner can manage this reservation."
+      );
+    }
+
+    if (TERMINAL_BOOKING_STATUSES.includes(booking.status)) {
+      throw new ExpressError(
+        400,
+        `Bookings with status "${booking.status}" cannot be modified.`
+      );
+    }
+
+    if (booking.status === normalizedTarget) {
+      throw new ExpressError(
+        400,
+        `Booking is already "${normalizedTarget}".`
+      );
+    }
+
+    if (normalizedTarget === "confirmed") {
+      if (booking.status !== "pending") {
+        throw new ExpressError(
+          400,
+          "Only pending bookings can be confirmed."
+        );
+      }
+      booking.status = "confirmed";
+      booking.confirmedAt = actionTimestamp;
+    } else if (normalizedTarget === "cancelled") {
+      if (!ACTIVE_BOOKING_STATUSES.includes(booking.status)) {
+        throw new ExpressError(
+          400,
+          "Only pending or confirmed bookings can be cancelled."
+        );
+      }
+      booking.status = "cancelled";
+      booking.cancelledAt = actionTimestamp;
+      booking.cancelledBy = "host";
+      booking.cancellationReason = reason;
+    } else if (normalizedTarget === "completed") {
+      if (booking.status !== "confirmed") {
+        throw new ExpressError(
+          400,
+          "Only confirmed bookings can be marked as completed."
+        );
+      }
+      booking.status = "completed";
+      booking.completedAt = actionTimestamp;
+    }
+
+    await booking.save({ session });
+    return booking;
+  }, resolvedOpts.maxRetries);
+}
+
+module.exports = {
+  BOOKING_STATUSES,
+  ACTIVE_BOOKING_STATUSES,
+  TERMINAL_BOOKING_STATUSES,
+  validateObjectId,
+  parseGuestCount,
+  resolveListingMaxGuests,
+  generateBookingReference,
+  calculateBookingPrice,
+  checkAvailability,
+  getListingBlockedDates,
+  createBooking,
+  findBookingById,
+  getGuestBookings,
+  getHostBookings,
+  cancelBooking,
+  updateBookingStatus,
+};

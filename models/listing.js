@@ -20,6 +20,22 @@ const listingSchema = new Schema({
     type: String,
     enum: [...LISTING_CATEGORY_SLUGS],
   },
+  maxGuests: {
+    type: Number,
+    min: 1,
+    max: 50,
+    validate: {
+      validator(value) {
+        return value === undefined || value === null || Number.isInteger(value);
+      },
+      message: "Listing capacity must be a whole number of guests.",
+    },
+  },
+  bookingVersion: {
+    type: Number,
+    default: 0,
+    select: false,
+  },
   reviews: [
     {
       type: mongoose.Schema.Types.ObjectId,

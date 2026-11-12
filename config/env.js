@@ -30,6 +30,38 @@ function parsePositiveInt(rawValue, fallback) {
   return Math.floor(parsed);
 }
 
+function parsePositiveBoundedInt(rawValue, fallback, minVal, maxVal) {
+  if (rawValue === undefined || rawValue === null || String(rawValue).trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
+    return fallback;
+  }
+  if (parsed < minVal) return minVal;
+  if (parsed > maxVal) return maxVal;
+  return parsed;
+}
+
+function parseBookingConfig(rawEnv = process.env) {
+  return {
+    defaultMaxGuests: parsePositiveBoundedInt(
+      rawEnv.BOOKING_DEFAULT_MAX_GUESTS,
+      8,
+      1,
+      50
+    ),
+    maxGuestsUpperLimit: 50,
+    maxTxRetries: parsePositiveBoundedInt(
+      rawEnv.BOOKING_TX_MAX_RETRIES,
+      4,
+      1,
+      10
+    ),
+    currency: "INR",
+  };
+}
+
 const VALID_TAX_MODES = Object.freeze(["indian_gst_slabs", "flat", "none"]);
 
 function parseTaxRate(rawRate) {
@@ -95,6 +127,7 @@ function readEnv() {
       authMaxAttempts: parsePositiveInt(process.env.AUTH_RATE_LIMIT_MAX, 10),
     },
     pricing: parsePricingConfig(process.env),
+    booking: parseBookingConfig(process.env),
     dnsServers: ["8.8.8.8", "8.8.4.4"],
   };
 }
@@ -172,6 +205,7 @@ module.exports = {
   parsePositiveInt,
   parseTaxRate,
   parsePricingConfig,
+  parseBookingConfig,
   VALID_TAX_MODES,
 };
 
