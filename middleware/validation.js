@@ -5,6 +5,7 @@ const {
   signupSchema,
   profileUpdateSchema,
   bookingSchema,
+  bookingCancellationSchema,
 } = require("../schema.js");
 const { cleanupFileIfUncommitted } = require("../utils/cloudinaryCleanup.js");
 
@@ -145,6 +146,40 @@ function validateBooking(req, res, next) {
   return next();
 }
 
+function validateBookingCancellation(req, res, next) {
+  const bookingId = req.params?.id;
+  if (typeof bookingId !== "string" || !/^[0-9a-fA-F]{24}$/.test(bookingId)) {
+    return next(new ExpressError(400, "Invalid Booking ID"));
+  }
+
+  if (req.body !== undefined && req.body !== null && !isPlainObject(req.body)) {
+    return next(new ExpressError(400, "Invalid cancellation request payload."));
+  }
+
+  const body = req.body || {};
+  if (!isStrictScalarOrUndefined(body.reason)) {
+    return next(new ExpressError(400, "Cancellation reason must be text."));
+  }
+
+  const sanitizedReason =
+    body.reason === undefined || body.reason === null
+      ? ""
+      : String(body.reason).trim();
+
+  const { error, value } = bookingCancellationSchema.validate({
+    reason: sanitizedReason,
+  });
+  if (error) {
+    req.validatedBookingCancellation = { reason: sanitizedReason };
+    req.bookingCancelValidationError = error.details[0].message;
+    return next();
+  }
+
+  req.validatedBookingCancellation = { reason: value.reason || "" };
+  req.bookingCancelValidationError = null;
+  return next();
+}
+
 module.exports = {
   validateListing,
   validateReview,
@@ -152,5 +187,6 @@ module.exports = {
   validateLogin,
   validateProfileUpdate,
   validateBooking,
+  validateBookingCancellation,
 };
 

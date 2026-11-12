@@ -43,7 +43,9 @@ const ALLOWED_AVAILABILITY_OPTIONS = new Set([
 ]);
 const ALLOWED_LISTING_BLOCKED_OPTIONS = new Set(["now", "fromDate"]);
 const ALLOWED_FIND_OPTIONS = new Set(["actorId", "role"]);
-const ALLOWED_LIST_OPTIONS = new Set(["status", "listingId"]);
+const ALLOWED_LIST_OPTIONS = new Set(["status", "listingId", "page", "limit"]);
+const DEFAULT_BOOKINGS_PAGE_SIZE = 8;
+const MAX_BOOKINGS_PAGE_SIZE = 30;
 const ALLOWED_CANCEL_OPTIONS = new Set(["role", "reason", "now", "maxRetries"]);
 const ALLOWED_STATUS_UPDATE_OPTIONS = new Set([
   "reason",
@@ -653,6 +655,59 @@ function normalizeStatusFilter(rawStatus) {
   return normalized;
 }
 
+function parsePositiveIntOption(rawValue, defaultValue, maxValue, label) {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return defaultValue;
+  }
+  if (typeof rawValue === "number") {
+    if (!Number.isSafeInteger(rawValue) || rawValue < 1 || rawValue > maxValue) {
+      throw new ExpressError(
+        400,
+        `${label} must be an integer between 1 and ${maxValue}.`
+      );
+    }
+    return rawValue;
+  }
+  if (typeof rawValue !== "string") {
+    throw new ExpressError(400, `Invalid ${label}.`);
+  }
+  const trimmed = rawValue.trim();
+  if (trimmed === "") {
+    return defaultValue;
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    throw new ExpressError(400, `Invalid ${label}.`);
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maxValue) {
+    throw new ExpressError(
+      400,
+      `${label} must be an integer between 1 and ${maxValue}.`
+    );
+  }
+  return parsed;
+}
+
+function isGuestCancellable(booking, now = new Date()) {
+  if (!booking || !ACTIVE_BOOKING_STATUSES.includes(booking.status)) {
+    return false;
+  }
+  if (booking.status === "confirmed") {
+    const todayUtc = getTodayUtcMidnight(now);
+    const checkOutDate =
+      booking.checkOut instanceof Date
+        ? booking.checkOut
+        : new Date(booking.checkOut);
+    if (
+      !Number.isNaN(checkOutDate.getTime()) &&
+      todayUtc.getTime() >= checkOutDate.getTime()
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function getGuestBookings(guestId, options = {}) {
   validateObjectId(guestId, "Guest ID");
   const resolvedOpts = validateOptions(
@@ -661,24 +716,93 @@ async function getGuestBookings(guestId, options = {}) {
     "guest booking list options"
   );
 
-  const filter = { guest: guestId };
+  const baseFilter = { guest: guestId };
+  if (resolvedOpts.listingId !== undefined) {
+    validateObjectId(resolvedOpts.listingId, "Listing ID");
+    baseFilter.listing = resolvedOpts.listingId;
+  }
+
+  const filter = { ...baseFilter };
   const statusFilter = normalizeStatusFilter(resolvedOpts.status);
   if (statusFilter) {
     filter.status = statusFilter;
   }
-  if (resolvedOpts.listingId !== undefined) {
-    validateObjectId(resolvedOpts.listingId, "Listing ID");
-    filter.listing = resolvedOpts.listingId;
+
+  const hasPagination =
+    resolvedOpts.page !== undefined || resolvedOpts.limit !== undefined;
+
+  if (!hasPagination) {
+    const [bookings, allStatusDocs] = await Promise.all([
+      Booking.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .populate("listing", "title location country image price maxGuests")
+        .populate("host", "username displayName location"),
+      statusFilter
+        ? Booking.find(baseFilter).select("status -_id").lean()
+        : Promise.resolve(null),
+    ]);
+
+    const stats = buildBookingStats(allStatusDocs || bookings);
+    return {
+      bookings,
+      stats,
+      activeStatus: statusFilter || "",
+      pageInfo: {
+        page: 1,
+        limit: bookings.length || DEFAULT_BOOKINGS_PAGE_SIZE,
+        totalCount: bookings.length,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPrevPage: false,
+        isOutOfRangePage: false,
+      },
+    };
   }
 
-  const bookings = await Booking.find(filter)
-    .sort({ createdAt: -1, _id: -1 })
-    .populate("listing", "title location country image price maxGuests")
-    .populate("host", "username displayName location");
+  const page = parsePositiveIntOption(
+    resolvedOpts.page,
+    1,
+    10000,
+    "Page number"
+  );
+  const limit = parsePositiveIntOption(
+    resolvedOpts.limit,
+    DEFAULT_BOOKINGS_PAGE_SIZE,
+    MAX_BOOKINGS_PAGE_SIZE,
+    "Bookings per page"
+  );
+
+  const [totalCount, allStatusDocs] = await Promise.all([
+    Booking.countDocuments(filter),
+    Booking.find(baseFilter).select("status -_id").lean(),
+  ]);
+
+  const totalPages = totalCount === 0 ? 1 : Math.ceil(totalCount / limit);
+  const isOutOfRangePage = totalCount > 0 && page > totalPages;
+  const skip = (page - 1) * limit;
+
+  const bookings = isOutOfRangePage
+    ? []
+    : await Booking.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("listing", "title location country image price maxGuests")
+        .populate("host", "username displayName location");
 
   return {
     bookings,
-    stats: buildBookingStats(bookings),
+    stats: buildBookingStats(allStatusDocs),
+    activeStatus: statusFilter || "",
+    pageInfo: {
+      page,
+      limit,
+      totalCount,
+      totalPages,
+      hasNextPage: !isOutOfRangePage && page < totalPages,
+      hasPrevPage: page > 1 && totalCount > 0,
+      isOutOfRangePage,
+    },
   };
 }
 
@@ -1062,6 +1186,7 @@ module.exports = {
   findBookingById,
   getGuestBookings,
   getHostBookings,
+  isGuestCancellable,
   cancelBooking,
   updateBookingStatus,
 };

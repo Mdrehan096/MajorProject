@@ -1,0 +1,256 @@
+<% layout("/layout/boilerplate") %>
+<%
+  const cards = Array.isArray(bookingCards) ? bookingCards : [];
+  const dashStats = stats || {
+    total: cards.length,
+    pendingCount: 0,
+    confirmedCount: 0,
+    cancelledCount: 0,
+    completedCount: 0,
+  };
+  const currentStatus = typeof activeStatus === "string" ? activeStatus : "";
+  const pager = pageInfo || {
+    page: 1,
+    limit: 8,
+    totalCount: cards.length,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+    isOutOfRangePage: false,
+  };
+  const noticeText =
+    (typeof paymentNotice === "string" && paymentNotice) ||
+    "Payment has not been collected. This reservation is not a paid booking.";
+  const statusTabs = [
+    { key: "", label: "All", count: dashStats.total },
+    { key: "pending", label: "Pending", count: dashStats.pendingCount },
+    { key: "confirmed", label: "Confirmed", count: dashStats.confirmedCount },
+    { key: "cancelled", label: "Cancelled", count: dashStats.cancelledCount },
+    { key: "completed", label: "Completed", count: dashStats.completedCount },
+  ];
+%>
+
+<div class="container px-0 my-4">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+
+      <!-- Header -->
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+        <div>
+          <h1 class="h2 fw-bold mb-1">My Bookings</h1>
+          <p class="text-muted small mb-0">
+            Track your upcoming stays, past reservations, and frozen price breakdowns.
+          </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="/dashboard" class="btn btn-outline-dark btn-sm px-3">Account Dashboard</a>
+          <a href="/listings" class="btn btn-dark edit-btn btn-sm px-3">Browse Listings</a>
+        </div>
+      </div>
+
+      <div class="alert alert-info py-2 px-3 small mb-4" role="note">
+        <i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
+        <strong>Reservation Notice:</strong> <%= noticeText %>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Total Bookings</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.total %></span>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Pending</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.pendingCount %></span>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Confirmed</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.confirmedCount %></span>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Cancelled / Completed</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.cancelledCount + dashStats.completedCount %></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status Filter Tabs -->
+      <ul class="nav nav-pills gap-2 mb-4" aria-label="Filter bookings by status">
+        <% for (const tab of statusTabs) { %>
+          <% const isActive = currentStatus === tab.key; %>
+          <li class="nav-item">
+            <a
+              href="<%= buildBookingsUrl({ status: tab.key, page: 1 }) %>"
+              class="nav-link btn-sm <%= isActive ? 'active bg-dark text-white' : 'text-dark border bg-light' %>"
+            >
+              <%= tab.label %> (<%= tab.count %>)
+            </a>
+          </li>
+        <% } %>
+      </ul>
+
+      <% if (pager.isOutOfRangePage) { %>
+        <div class="account-card p-5 text-center bg-light">
+          <h2 class="h5 fw-semibold mb-2">No bookings on page <%= pager.page %></h2>
+          <p class="small text-muted mb-3">
+            There <%= pager.totalPages === 1 ? "is" : "are" %> currently <%= pager.totalPages %> <%= pager.totalPages === 1 ? "page" : "pages" %> of bookings.
+          </p>
+          <a href="<%= buildBookingsUrl({ page: 1 }) %>" class="btn btn-dark btn-sm px-4">Go to Page 1</a>
+        </div>
+      <% } else if (cards.length === 0) { %>
+        <div class="account-card p-5 text-center bg-light">
+          <i class="fa-regular fa-calendar-check text-muted fs-2 mb-2" aria-hidden="true"></i>
+          <% if (dashStats.total === 0) { %>
+            <h2 class="h5 fw-semibold mb-1">You have no bookings yet</h2>
+            <p class="small text-muted mb-3">
+              Explore available stays and request a reservation to view your trip history here.
+            </p>
+            <a href="/listings" class="btn btn-dark edit-btn btn-sm px-4">Explore Listings</a>
+          <% } else { %>
+            <h2 class="h5 fw-semibold mb-1">No <%= currentStatus %> bookings found</h2>
+            <p class="small text-muted mb-3">
+              You have <%= dashStats.total %> total <%= dashStats.total === 1 ? "booking" : "bookings" %> under other statuses.
+            </p>
+            <a href="/bookings" class="btn btn-dark btn-sm px-4">View All Bookings</a>
+          <% } %>
+        </div>
+      <% } else { %>
+        <div class="row row-cols-1 row-cols-md-2 g-4">
+          <% for (const item of cards) { %>
+            <%
+              const b = item.booking || {};
+              const liveListing = b.listing || null;
+              const snap = b.listingSnapshot || {};
+              const title = liveListing?.title || snap.title || "Reserved Listing";
+              const location = liveListing?.location || snap.location || "";
+              const country = liveListing?.country || snap.country || "";
+              const imageUrl =
+                (liveListing?.image?.url && String(liveListing.image.url).trim()) ||
+                (snap.imageUrl && String(snap.imageUrl).trim()) ||
+                "";
+              const pricing = b.pricing || {};
+              let badgeClass = "text-bg-warning";
+              if (b.status === "confirmed") badgeClass = "text-bg-success";
+              else if (b.status === "cancelled") badgeClass = "text-bg-danger";
+              else if (b.status === "completed") badgeClass = "text-bg-secondary";
+            %>
+            <div class="col">
+              <div class="dashboard-item-card p-3 h-100 d-flex flex-column justify-content-between">
+                <div>
+                  <div class="mb-3">
+                    <% if (imageUrl) { %>
+                      <img src="<%= imageUrl %>" alt="<%= title %>" class="dashboard-thumb" />
+                    <% } else { %>
+                      <div class="dashboard-thumb-fallback">
+                        <span class="small">No property image available</span>
+                      </div>
+                    <% } %>
+                  </div>
+
+                  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                    <div>
+                      <span class="badge <%= badgeClass %> text-uppercase mb-1"><%= b.status %></span>
+                      <h2 class="h5 fw-semibold mb-1">
+                        <a href="/bookings/<%= b._id %>" class="text-decoration-none text-dark"><%= title %></a>
+                      </h2>
+                      <% if (location || country) { %>
+                        <p class="small text-muted mb-0">
+                          <i class="fa-solid fa-location-dot text-danger me-1" aria-hidden="true"></i>
+                          <%= location %><% if (location && country) { %>, <% } %><%= country %>
+                        </p>
+                      <% } %>
+                    </div>
+                    <div class="text-end small">
+                      <span class="text-muted d-block">Reference</span>
+                      <strong class="text-dark"><%= b.bookingReference %></strong>
+                    </div>
+                  </div>
+
+                  <div class="row g-2 small my-2 pt-2 border-top">
+                    <div class="col-6">
+                      <span class="text-muted d-block">Check-in</span>
+                      <strong class="text-dark"><%= item.checkInFormatted || item.checkInIso %></strong>
+                    </div>
+                    <div class="col-6">
+                      <span class="text-muted d-block">Check-out</span>
+                      <strong class="text-dark"><%= item.checkOutFormatted || item.checkOutIso %></strong>
+                    </div>
+                    <div class="col-6">
+                      <span class="text-muted d-block">Stay &amp; Guests</span>
+                      <strong class="text-dark">
+                        <%= pricing.nights %> <%= pricing.nights === 1 ? "night" : "nights" %> &middot;
+                        <%= b.guests %> <%= b.guests === 1 ? "guest" : "guests" %>
+                      </strong>
+                    </div>
+                    <div class="col-6">
+                      <span class="text-muted d-block">Total (Not Paid)</span>
+                      <strong class="text-dark">&#8377; <%= formatINR(pricing.totalPrice) %> <%= pricing.currency || "INR" %></strong>
+                    </div>
+                  </div>
+
+                  <% if (item.createdAtFormatted) { %>
+                    <p class="small text-muted mb-0 pt-2 border-top">
+                      Requested on <%= item.createdAtFormatted %>
+                    </p>
+                  <% } %>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2 mt-3 pt-2 border-top">
+                  <a href="/bookings/<%= b._id %>" class="btn btn-sm btn-dark edit-btn">View Details</a>
+                  <% if (liveListing && liveListing._id) { %>
+                    <a href="/listings/<%= liveListing._id %>" class="btn btn-sm btn-outline-dark">Listing</a>
+                  <% } %>
+                  <% if (item.canGuestCancel) { %>
+                    <form
+                      method="POST"
+                      action="/bookings/<%= b._id %>/cancel"
+                      class="ms-auto m-0"
+                    >
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Cancel Booking</button>
+                    </form>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          <% } %>
+        </div>
+
+        <% if (pager.totalPages > 1) { %>
+          <nav class="mt-4 d-flex justify-content-center" aria-label="Guest bookings pagination">
+            <ul class="pagination pagination-sm mb-0">
+              <li class="page-item <%= pager.hasPrevPage ? '' : 'disabled' %>">
+                <a
+                  class="page-link"
+                  href="<%= pager.hasPrevPage ? buildBookingsUrl({ page: pager.page - 1 }) : '#' %>"
+                  tabindex="<%= pager.hasPrevPage ? '0' : '-1' %>"
+                >Previous</a>
+              </li>
+              <% for (let p = 1; p <= pager.totalPages; p += 1) { %>
+                <li class="page-item <%= p === pager.page ? 'active' : '' %>">
+                  <a class="page-link" href="<%= buildBookingsUrl({ page: p }) %>"><%= p %></a>
+                </li>
+              <% } %>
+              <li class="page-item <%= pager.hasNextPage ? '' : 'disabled' %>">
+                <a
+                  class="page-link"
+                  href="<%= pager.hasNextPage ? buildBookingsUrl({ page: pager.page + 1 }) : '#' %>"
+                  tabindex="<%= pager.hasNextPage ? '0' : '-1' %>"
+                >Next</a>
+              </li>
+            </ul>
+          </nav>
+        <% } %>
+      <% } %>
+
+    </div>
+  </div>
+</div>
+

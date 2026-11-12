@@ -40,3 +40,7 @@ module.exports.bookingSchema = Joi.object({
   checkOut: Joi.string().trim().required(),
   guests: Joi.number().integer().min(1).max(50).required(),
 });
+
+module.exports.bookingCancellationSchema = Joi.object({
+  reason: Joi.string().trim().max(300).allow("").optional(),
+});

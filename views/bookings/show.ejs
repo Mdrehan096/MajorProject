@@ -17,6 +17,16 @@
   const hostUsername = b.host?.username || "Host";
   const hostDisplayName = b.host?.displayName || "";
   const resolvedRole = typeof viewerRole === "string" ? viewerRole : "guest";
+  const resolvedCanGuestCancel =
+    typeof canGuestCancel === "boolean"
+      ? canGuestCancel
+      : resolvedRole === "guest" && ["pending", "confirmed"].includes(b.status);
+  const resolvedActionError =
+    typeof actionError === "string" && actionError ? actionError : "";
+  const resolvedCancelDraft =
+    typeof cancellationReasonDraft === "string" ? cancellationReasonDraft : "";
+  const resolvedCancelledAt =
+    typeof cancelledAtFormatted === "string" ? cancelledAtFormatted : "";
   const noticeText =
     (typeof paymentNotice === "string" && paymentNotice) ||
     "Payment has not been collected. This reservation is not a paid booking.";
@@ -44,12 +54,22 @@
             </p>
           </div>
           <div class="d-flex flex-wrap gap-2">
+            <% if (resolvedRole === "guest") { %>
+              <a href="/bookings" class="btn btn-outline-dark btn-sm">My Bookings</a>
+            <% } %>
             <% if (liveListing && liveListing._id) { %>
               <a href="/listings/<%= liveListing._id %>" class="btn btn-outline-dark btn-sm">View Listing</a>
             <% } %>
             <a href="/dashboard" class="btn btn-dark btn-sm">Dashboard</a>
           </div>
         </div>
+
+        <% if (resolvedActionError) { %>
+          <div id="bookingActionError" class="alert alert-danger py-2 px-3 small mb-3" role="alert">
+            <i class="fa-solid fa-circle-exclamation me-1" aria-hidden="true"></i>
+            <%= resolvedActionError %>
+          </div>
+        <% } %>
 
         <div class="alert alert-info py-2 px-3 small mb-4" role="note">
           <i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
@@ -178,10 +198,66 @@
             </div>
           </div>
         </div>
+
+        <% if (b.status === "cancelled") { %>
+          <div id="cancellationSummary" class="border border-danger-subtle rounded-4 p-3 p-md-4 bg-light mt-4">
+            <h3 class="h6 fw-semibold text-danger mb-2">Reservation Cancelled</h3>
+            <p class="small mb-1">
+              Cancelled by: <strong class="text-capitalize"><%= b.cancelledBy || "guest" %></strong>
+              <% if (resolvedCancelledAt) { %>
+                &middot; on <span><%= resolvedCancelledAt %></span>
+              <% } %>
+            </p>
+            <% if (b.cancellationReason) { %>
+              <p class="small mb-2">
+                Reason: <span class="text-body"><%= b.cancellationReason %></span>
+              </p>
+            <% } %>
+            <p class="small text-muted mb-0">
+              Reserved calendar dates have been released. Payment has not been collected, so no payment charge or refund applies.
+            </p>
+          </div>
+        <% } else if (resolvedCanGuestCancel) { %>
+          <div id="cancelSection" class="border rounded-4 p-3 p-md-4 bg-light mt-4">
+            <h3 class="h6 fw-semibold mb-1">Need to cancel this reservation?</h3>
+            <p class="small text-muted mb-3">
+              Payment has not been collected for this reservation. Cancelling immediately releases the reserved calendar dates with no online payment charge.
+            </p>
+            <form
+              id="cancelBookingForm"
+              method="POST"
+              action="/bookings/<%= b._id %>/cancel"
+            >
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div class="mb-3">
+                <label for="cancellationReasonInput" class="form-label small fw-semibold">
+                  Cancellation reason (optional)
+                </label>
+                <input
+                  id="cancellationReasonInput"
+                  name="reason"
+                  type="text"
+                  maxlength="300"
+                  value="<%= resolvedCancelDraft %>"
+                  placeholder="Optional note for cancelling (max 300 characters)"
+                  class="form-control form-control-sm"
+                />
+              </div>
+              <button id="cancelBookingBtn" type="submit" class="btn btn-outline-danger btn-sm px-3">
+                Cancel Reservation
+              </button>
+            </form>
+          </div>
+        <% } %>
       </div>
 
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <a href="/listings" class="btn btn-outline-secondary btn-sm">Explore More Listings</a>
+        <div class="d-flex flex-wrap gap-2">
+          <% if (resolvedRole === "guest") { %>
+            <a href="/bookings" class="btn btn-outline-secondary btn-sm">Back to My Bookings</a>
+          <% } %>
+          <a href="/listings" class="btn btn-outline-secondary btn-sm">Explore More Listings</a>
+        </div>
         <% if (liveListing && liveListing._id) { %>
           <a href="/listings/<%= liveListing._id %>" class="btn btn-outline-dark btn-sm">Return to Listing</a>
         <% } %>
