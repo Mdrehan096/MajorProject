@@ -77,3 +77,45 @@ module.exports.logout = (req, res, next) => {
     res.redirect("/listings");
   });
 };
+
+module.exports.renderProfile = async (req, res) => {
+  const profileData = await userService.getUserProfile(req.user?._id);
+  if (!profileData) {
+    req.flash("error", "User account could not be found.");
+    return res.redirect("/listings");
+  }
+
+  res.render("users/profile.ejs", profileData);
+};
+
+module.exports.updateProfile = async (req, res, next) => {
+  try {
+    const updated = await userService.updateUserProfile(req.user?._id, req.body);
+    if (!updated) {
+      req.flash("error", "User account could not be found.");
+      return res.redirect("/listings");
+    }
+    req.flash("success", "Profile updated successfully.");
+    return res.redirect("/profile");
+  } catch (err) {
+    if (err instanceof ExpressError && err.statusCode >= 400 && err.statusCode < 500) {
+      req.flash("error", err.message);
+      return res.redirect("/profile");
+    }
+    if (err?.code === 11000 || err?.cause?.code === 11000) {
+      req.flash("error", "Unable to update email with a duplicate value.");
+      return res.redirect("/profile");
+    }
+    return next(err);
+  }
+};
+
+module.exports.renderDashboard = async (req, res) => {
+  const dashboardData = await userService.getUserDashboard(req.user?._id);
+  if (!dashboardData) {
+    req.flash("error", "User account could not be found.");
+    return res.redirect("/listings");
+  }
+
+  res.render("users/dashboard.ejs", dashboardData);
+};

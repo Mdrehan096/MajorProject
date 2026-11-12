@@ -1,0 +1,258 @@
+<% layout("/layout/boilerplate") %>
+<%
+  const userProfile = profile || {};
+  const dashStats = stats || {
+    totalListings: 0,
+    totalAuthoredReviews: 0,
+    totalReviewsReceived: 0,
+    formattedOverallAverageRating: null,
+  };
+  const listings = Array.isArray(ownedListings) ? ownedListings : [];
+  const reviews = Array.isArray(authoredReviews) ? authoredReviews : [];
+  const headingName = userProfile.displayName || `@${userProfile.username || "user"}`;
+%>
+
+<div class="container px-0 my-4">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+
+      <!-- Dashboard Header -->
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+          <h1 class="h2 fw-bold mb-1">Dashboard</h1>
+          <p class="text-muted small mb-0">
+            Welcome back, <strong><%= headingName %></strong> (@<%= userProfile.username || "user" %>). Manage your hosted listings and guest reviews.
+          </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <a href="/profile" class="btn btn-outline-dark btn-sm px-3">
+            <i class="fa-regular fa-user me-1" aria-hidden="true"></i>
+            Edit Profile
+          </a>
+          <a href="/listings/new" class="btn btn-dark edit-btn btn-sm px-3">
+            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>
+            Create New Listing
+          </a>
+        </div>
+      </div>
+
+      <!-- KPI Summary Cards -->
+      <div class="row g-3 mb-5">
+        <div class="col-6 col-lg-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">My Listings</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.totalListings %></span>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Reviews Received</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.totalReviewsReceived %></span>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Host Avg. Rating</span>
+            <span class="fs-3 fw-bold text-dark">
+              <% if (dashStats.formattedOverallAverageRating !== null) { %>
+                <%= dashStats.formattedOverallAverageRating %> <small class="fs-6 text-warning">&#9733;</small>
+              <% } else { %>
+                <span class="fs-5 text-muted fw-normal">No ratings</span>
+              <% } %>
+            </span>
+          </div>
+        </div>
+        <div class="col-6 col-lg-3">
+          <div class="dashboard-stat-card p-3 h-100">
+            <span class="text-muted small d-block mb-1">Reviews Written</span>
+            <span class="fs-3 fw-bold text-dark"><%= dashStats.totalAuthoredReviews %></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Listings Section -->
+      <section class="mb-5" aria-label="My hosted listings">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h4 fw-bold mb-0">
+            My Listings
+            <span class="text-muted fs-6 fw-normal">(<%= listings.length %>)</span>
+          </h2>
+          <% if (listings.length > 0) { %>
+            <a href="/listings/new" class="btn btn-sm btn-outline-dark">Add Another</a>
+          <% } %>
+        </div>
+
+        <% if (listings.length === 0) { %>
+          <div class="account-card p-5 text-center bg-light">
+            <i class="fa-solid fa-house-chimney text-muted fs-2 mb-2" aria-hidden="true"></i>
+            <h3 class="h6 fw-semibold mb-1">You have not hosted any listings yet</h3>
+            <p class="small text-muted mb-3">
+              Publish your first stay to share pricing details, location previews, and collect guest reviews.
+            </p>
+            <a href="/listings/new" class="btn btn-dark edit-btn btn-sm px-4">Create Your First Listing</a>
+          </div>
+        <% } else { %>
+          <div class="row row-cols-1 row-cols-md-2 g-4">
+            <% for (const item of listings) { %>
+              <div class="col">
+                <div class="dashboard-item-card p-3 h-100 d-flex flex-column justify-content-between">
+                  <div>
+                    <div class="mb-3">
+                      <% if (item.image?.url) { %>
+                        <img
+                          src="<%= item.image.url %>"
+                          alt="<%= item.title %>"
+                          class="dashboard-thumb"
+                        />
+                      <% } else { %>
+                        <div class="dashboard-thumb-fallback">
+                          <span class="small">No image available</span>
+                        </div>
+                      <% } %>
+                    </div>
+
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <h3 class="h5 fw-semibold mb-1">
+                          <a href="/listings/<%= item._id %>" class="text-decoration-none text-dark">
+                            <%= item.title %>
+                          </a>
+                        </h3>
+                        <p class="small text-muted mb-0">
+                          <i class="fa-solid fa-location-dot text-danger me-1" aria-hidden="true"></i>
+                          <%= item.location %><% if (item.country) { %>, <%= item.country %><% } %>
+                        </p>
+                      </div>
+
+                      <% if (item.categoryMeta) { %>
+                        <span class="badge rounded-pill detail-badge px-2 py-1">
+                          <i class="<%= item.categoryMeta.icon %> me-1" aria-hidden="true"></i>
+                          <%= item.categoryMeta.label %>
+                        </span>
+                      <% } %>
+                    </div>
+
+                    <div class="d-flex flex-wrap justify-content-between align-items-center small text-muted my-2 pt-2 border-top">
+                      <span>
+                        <% if (item.pricing && item.pricing.isPriceAvailable) { %>
+                          <strong class="text-dark">&#8377; <%= item.pricing.formattedBasePrice %></strong> / night
+                        <% } else { %>
+                          Price unavailable
+                        <% } %>
+                      </span>
+                      <span>
+                        <% if (item.reviewStats && item.reviewStats.formattedAverage !== null) { %>
+                          <i class="fa-solid fa-star text-warning me-1" aria-hidden="true"></i>
+                          <strong class="text-dark"><%= item.reviewStats.formattedAverage %></strong>
+                          (<%= item.reviewStats.reviewCount %>)
+                        <% } else { %>
+                          No reviews yet
+                        <% } %>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="d-flex flex-wrap gap-2 mt-3 pt-2 border-top">
+                    <a href="/listings/<%= item._id %>" class="btn btn-sm btn-outline-dark">View</a>
+                    <a href="/listings/<%= item._id %>/edit" class="btn btn-sm btn-dark edit-btn">Edit</a>
+                    <form
+                      method="POST"
+                      action="/listings/<%= item._id %>?_method=DELETE"
+                      class="ms-auto m-0"
+                    >
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                      <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        <% } %>
+      </section>
+
+      <!-- My Reviews Section -->
+      <section aria-label="My authored reviews">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h4 fw-bold mb-0">
+            My Reviews
+            <span class="text-muted fs-6 fw-normal">(<%= reviews.length %>)</span>
+          </h2>
+          <a href="/listings" class="btn btn-sm btn-outline-secondary">Explore Stays</a>
+        </div>
+
+        <% if (reviews.length === 0) { %>
+          <div class="account-card p-5 text-center bg-light">
+            <i class="fa-regular fa-comment-dots text-muted fs-2 mb-2" aria-hidden="true"></i>
+            <h3 class="h6 fw-semibold mb-1">No reviews written yet</h3>
+            <p class="small text-muted mb-3">
+              Once you review an accommodation listing, your feedback history will appear here.
+            </p>
+            <a href="/listings" class="btn btn-dark btn-sm px-4">Browse Listings</a>
+          </div>
+        <% } else { %>
+          <div class="row row-cols-1 row-cols-md-2 g-3">
+            <% for (const rev of reviews) { %>
+              <%
+                const createdLabel =
+                  rev.createdAt instanceof Date && !Number.isNaN(rev.createdAt.getTime())
+                    ? rev.createdAt.toLocaleDateString("en-IN", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "";
+              %>
+              <div class="col">
+                <div class="dashboard-item-card p-3 h-100 d-flex flex-column justify-content-between">
+                  <div>
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                      <div>
+                        <% if (rev.listing) { %>
+                          <h3 class="h6 fw-semibold mb-0">
+                            <a href="/listings/<%= rev.listing._id %>" class="text-decoration-none text-dark">
+                              <%= rev.listing.title %>
+                            </a>
+                          </h3>
+                          <p class="small text-muted mb-0">
+                            <%= rev.listing.location %><% if (rev.listing.country) { %>, <%= rev.listing.country %><% } %>
+                          </p>
+                        <% } else { %>
+                          <h3 class="h6 fw-semibold text-muted mb-0">Listing no longer available</h3>
+                        <% } %>
+                      </div>
+                      <% if (createdLabel) { %>
+                        <span class="small text-muted"><%= createdLabel %></span>
+                      <% } %>
+                    </div>
+
+                    <p class="starability-result mb-2" data-rating="<%= rev.rating %>"></p>
+                    <p class="small text-body mb-3"><%= rev.comment %></p>
+                  </div>
+
+                  <div class="d-flex flex-wrap gap-2 pt-2 border-top">
+                    <% if (rev.listing) { %>
+                      <a href="/listings/<%= rev.listing._id %>" class="btn btn-sm btn-outline-dark">
+                        View Listing
+                      </a>
+                      <form
+                        method="POST"
+                        action="/listings/<%= rev.listing._id %>/reviews/<%= rev._id %>?_method=DELETE"
+                        class="ms-auto m-0"
+                      >
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete Review</button>
+                      </form>
+                    <% } %>
+                  </div>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        <% } %>
+      </section>
+
+    </div>
+  </div>
+</div>
+

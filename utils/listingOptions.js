@@ -108,6 +108,38 @@ function buildListingsUrl(filters = {}, overrides = {}) {
   return queryString ? `/listings?${queryString}` : "/listings";
 }
 
+function computeReviewStats(reviews = []) {
+  const reviewList = Array.isArray(reviews) ? reviews.filter(Boolean) : [];
+  let ratingSum = 0;
+  let ratedCount = 0;
+
+  for (const review of reviewList) {
+    const rawRating = Number(review?.rating);
+    if (Number.isFinite(rawRating) && rawRating >= 1 && rawRating <= 5) {
+      ratingSum += rawRating;
+      ratedCount += 1;
+    }
+  }
+
+  const averageRating =
+    ratedCount > 0 ? Math.round((ratingSum / ratedCount) * 10) / 10 : null;
+
+  return {
+    reviewCount: reviewList.length,
+    ratedCount,
+    averageRating,
+    formattedAverage: averageRating !== null ? averageRating.toFixed(1) : null,
+    hasReviews: reviewList.length > 0,
+  };
+}
+
+function resolveCategoryMeta(categorySlug) {
+  if (typeof categorySlug !== "string" || !categorySlug) {
+    return null;
+  }
+  return LISTING_CATEGORY_MAP.get(categorySlug) || null;
+}
+
 module.exports = {
   DEFAULT_PAGE,
   DEFAULT_LIMIT,
@@ -121,5 +153,7 @@ module.exports = {
   SORT_OPTION_MAP,
   getDefaultListingQuery,
   buildListingsUrl,
+  computeReviewStats,
+  resolveCategoryMeta,
 };
 

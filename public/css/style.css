@@ -281,3 +281,46 @@ body {
     height: 280px;
   }
 }
+
+/* profile & dashboard */
+.profile-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background-color: #fe424d;
+  color: #ffffff;
+  font-size: 1.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.account-card,
+.dashboard-stat-card,
+.dashboard-item-card {
+  border: 1px solid #e9ecef;
+  border-radius: 1rem;
+  background-color: #ffffff;
+  box-shadow: 0 0.2rem 0.75rem rgba(0, 0, 0, 0.04);
+}
+
+.dashboard-thumb {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 0.75rem;
+}
+
+.dashboard-thumb-fallback {
+  width: 100%;
+  height: 180px;
+  border-radius: 0.75rem;
+  background-color: #f8f9fa;
+  border: 1px dashed #ced4da;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c757d;
+}

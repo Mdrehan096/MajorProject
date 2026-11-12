@@ -71,13 +71,15 @@
          </form>
       </div>
 
-       <div class="navbar-nav ms-auto">
+       <div class="navbar-nav ms-auto align-items-md-center">
         <a class="nav-link" href="/listings/new">Airbnb your Home</a>
         <% if(!currUser){ %>
         <a class="nav-link" href="/signup"><b>sign up</b></a>
         <a class="nav-link" href="/login"><B>log in</B></a>
         <% } %>
         <% if(currUser){ %>
+        <a class="nav-link" href="/dashboard">Dashboard</a>
+        <a class="nav-link" href="/profile"><b>@<%= currUser.username %></b></a>
         <form action="/logout" method="POST" class="d-flex align-items-center">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
           <button type="submit" class="nav-link btn btn-link border-0" style="text-decoration: none;"><b>log out</b></button>

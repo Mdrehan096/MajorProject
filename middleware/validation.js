@@ -1,5 +1,10 @@
 const ExpressError = require("../utils/ExpressError.js");
-const { listingSchema, reviewSchema, signupSchema } = require("../schema.js");
+const {
+  listingSchema,
+  reviewSchema,
+  signupSchema,
+  profileUpdateSchema,
+} = require("../schema.js");
 const { cleanupFileIfUncommitted } = require("../utils/cloudinaryCleanup.js");
 
 async function validateListing(req, res, next) {
@@ -53,10 +58,22 @@ function validateLogin(req, res, next) {
   next();
 }
 
+function validateProfileUpdate(req, res, next) {
+  const { _csrf, ...profilePayload } = req.body || {};
+  const { error, value } = profileUpdateSchema.validate(profilePayload);
+  if (error) {
+    req.flash("error", error.details[0].message);
+    return res.redirect("/profile");
+  }
+  req.body = value;
+  next();
+}
+
 module.exports = {
   validateListing,
   validateReview,
   validateSignup,
   validateLogin,
+  validateProfileUpdate,
 };
 

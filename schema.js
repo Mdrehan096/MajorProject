@@ -27,3 +27,10 @@ module.exports.signupSchema = Joi.object({
   email: Joi.string().trim().email({ tlds: { allow: false } }).required(),
   password: Joi.string().min(1).required(),
 });
+
+module.exports.profileUpdateSchema = Joi.object({
+  email: Joi.string().trim().email({ tlds: { allow: false } }).max(254).required(),
+  displayName: Joi.string().trim().max(80).allow("").optional(),
+  bio: Joi.string().trim().max(500).allow("").optional(),
+  location: Joi.string().trim().max(100).allow("").optional(),
+});
