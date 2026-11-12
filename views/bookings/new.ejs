@@ -1,0 +1,244 @@
+<% layout("/layout/boilerplate") %>
+<%
+  const safeListing = listing || {};
+  const safeCategory = typeof categoryMeta !== "undefined" ? categoryMeta : null;
+  const safeForm = formValues || { checkIn: "", checkOut: "", guests: "1" };
+  const safeBlocked = Array.isArray(blockedDates) ? blockedDates : [];
+  const resolvedMaxGuests = typeof maxGuests === "number" ? maxGuests : 8;
+  const resolvedMaxStay = typeof maxStayNights === "number" ? maxStayNights : 90;
+  const resolvedToday = typeof todayStr === "string" && todayStr
+    ? todayStr
+    : new Date().toISOString().slice(0, 10);
+  const activeError =
+    (typeof errorMessage === "string" && errorMessage) ||
+    (typeof reviewError === "string" && reviewError) ||
+    "";
+  const hostUsername = safeListing.owner?.username || "Unknown Host";
+  const hasImage = Boolean(safeListing.image?.url && String(safeListing.image.url).trim());
+  const canSubmit = !isOwnListing && isPriceAvailable;
+  const noticeText =
+    typeof paymentNotice === "string" && paymentNotice
+      ? paymentNotice
+      : "Payment has not been collected. This reservation is not a paid booking.";
+%>
+
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+  const bookingReviewData = <%- safeJson({
+    listingId: String(safeListing._id || ""),
+    todayStr: resolvedToday,
+    maxGuests: resolvedMaxGuests,
+    maxStayNights: resolvedMaxStay,
+    isPriceAvailable: Boolean(isPriceAvailable),
+  }) %>;
+</script>
+
+<div class="container px-0 my-4">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-10">
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+        <div>
+          <a href="/listings/<%= safeListing._id %>" class="text-decoration-none text-muted small d-inline-block mb-1">
+            <i class="fa-solid fa-arrow-left me-1" aria-hidden="true"></i>
+            Back to listing
+          </a>
+          <h1 class="h2 fw-bold mb-0">Review your reservation</h1>
+        </div>
+        <span class="badge text-bg-light border px-3 py-2">
+          Max <%= resolvedMaxGuests %> <%= resolvedMaxGuests === 1 ? "guest" : "guests" %>
+        </span>
+      </div>
+
+      <div class="row g-4 align-items-start">
+        <!-- Left Column: Booking Form & Notices -->
+        <div class="col-12 col-lg-7">
+          <div class="form-card p-3 p-md-4 mb-4">
+            <% if (activeError) { %>
+              <div id="bookingReviewError" class="alert alert-danger py-2 px-3 small mb-3" role="alert">
+                <i class="fa-solid fa-circle-exclamation me-1" aria-hidden="true"></i>
+                <%= activeError %>
+              </div>
+            <% } else { %>
+              <div id="bookingReviewError" class="alert alert-danger d-none py-2 px-3 small mb-3" role="alert"></div>
+            <% } %>
+
+            <% if (isOwnListing) { %>
+              <div class="alert alert-warning py-2 px-3 small mb-3" role="status">
+                You are the host of this listing. Hosts cannot book their own property.
+              </div>
+            <% } %>
+
+            <% if (!isPriceAvailable) { %>
+              <div class="alert alert-warning py-2 px-3 small mb-3" role="status">
+                This listing does not have a valid bookable nightly price configured right now.
+              </div>
+            <% } %>
+
+            <div class="alert alert-info py-2 px-3 small mb-4" role="note">
+              <i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
+              <strong>Unpaid reservation notice:</strong> <%= noticeText %>
+            </div>
+
+            <form
+              id="bookingReviewForm"
+              method="POST"
+              action="/listings/<%= safeListing._id %>/book"
+              novalidate
+            >
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+              <div class="row g-3 mb-3">
+                <div class="col-12 col-sm-6">
+                  <label for="bookingCheckIn" class="form-label fw-semibold small">Check-in date</label>
+                  <input
+                    id="bookingCheckIn"
+                    name="checkIn"
+                    type="date"
+                    min="<%= resolvedToday %>"
+                    value="<%= safeForm.checkIn || '' %>"
+                    class="form-control"
+                    required
+                  />
+                </div>
+                <div class="col-12 col-sm-6">
+                  <label for="bookingCheckOut" class="form-label fw-semibold small">Check-out date</label>
+                  <input
+                    id="bookingCheckOut"
+                    name="checkOut"
+                    type="date"
+                    min="<%= resolvedToday %>"
+                    value="<%= safeForm.checkOut || '' %>"
+                    class="form-control"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div class="mb-4">
+                <label for="bookingGuests" class="form-label fw-semibold small">Number of guests</label>
+                <input
+                  id="bookingGuests"
+                  name="guests"
+                  type="number"
+                  min="1"
+                  max="<%= resolvedMaxGuests %>"
+                  step="1"
+                  value="<%= safeForm.guests || '1' %>"
+                  class="form-control"
+                  required
+                />
+                <div class="form-text">
+                  Maximum capacity for this stay: <%= resolvedMaxGuests %> <%= resolvedMaxGuests === 1 ? "guest" : "guests" %>. Max stay duration: <%= resolvedMaxStay %> nights.
+                </div>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button
+                  id="confirmBookingBtn"
+                  type="submit"
+                  class="btn btn-dark edit-btn py-2 fw-semibold"
+                  <%= canSubmit ? "" : "disabled" %>
+                >
+                  Confirm Reservation Request
+                </button>
+                <a href="/listings/<%= safeListing._id %>" class="btn btn-outline-secondary btn-sm py-2">
+                  Cancel and return to listing
+                </a>
+              </div>
+            </form>
+          </div>
+
+          <div class="account-card p-3 p-md-4 bg-light">
+            <h2 class="h6 fw-semibold mb-2">Upcoming unavailable dates</h2>
+            <p class="small text-muted mb-2">
+              Reserved dates are blocked using half-open check-in to check-out intervals; you may check in on an existing reservation's check-out date.
+            </p>
+            <% if (safeBlocked.length > 0) { %>
+              <ul class="blocked-dates-list list-unstyled mb-0">
+                <% for (const slot of safeBlocked.slice(0, 8)) { %>
+                  <li class="blocked-date-item d-flex justify-content-between align-items-center small py-1">
+                    <span><%= slot.checkIn %> &rarr; <%= slot.checkOut %></span>
+                    <span class="badge text-bg-secondary-subtle border text-secondary-emphasis">Unavailable</span>
+                  </li>
+                <% } %>
+              </ul>
+            <% } else { %>
+              <p class="small text-muted mb-0">No upcoming blocked dates at this property.</p>
+            <% } %>
+          </div>
+        </div>
+
+        <!-- Right Column: Listing & Server-Calculated Pricing Summary -->
+        <div class="col-12 col-lg-5">
+          <aside class="pricing-card p-3 p-md-4" aria-label="Booking summary">
+            <div class="mb-3">
+              <% if (hasImage) { %>
+                <img
+                  src="<%= safeListing.image.url %>"
+                  alt="<%= safeListing.title %>"
+                  class="dashboard-thumb mb-3"
+                />
+              <% } else { %>
+                <div class="dashboard-thumb-fallback mb-3">
+                  <span class="small">No property image uploaded</span>
+                </div>
+              <% } %>
+
+              <% if (safeCategory) { %>
+                <span class="badge rounded-pill detail-badge px-2 py-1 mb-2 d-inline-flex align-items-center gap-1">
+                  <i class="<%= safeCategory.icon %>" aria-hidden="true"></i>
+                  <span><%= safeCategory.label %></span>
+                </span>
+              <% } %>
+
+              <h2 class="h5 fw-bold mb-1"><%= safeListing.title %></h2>
+              <p class="small text-muted mb-1">
+                <i class="fa-solid fa-location-dot text-danger me-1" aria-hidden="true"></i>
+                <%= safeListing.location %><% if (safeListing.country) { %>, <%= safeListing.country %><% } %>
+              </p>
+              <p class="small text-muted mb-0">Hosted by <strong>@<%= hostUsername %></strong></p>
+            </div>
+
+            <hr class="my-3" />
+
+            <h3 class="h6 fw-semibold mb-3">Server-calculated price summary</h3>
+            <% if (pricing && pricing.isPriceAvailable) { %>
+              <div class="d-flex flex-column gap-2 small">
+                <div class="d-flex justify-content-between">
+                  <span class="text-muted">Nightly rate</span>
+                  <span class="fw-medium">&#8377; <%= pricing.formattedBasePrice %></span>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span id="reviewPricingNightsLabel" class="text-muted">
+                    &#8377; <%= pricing.formattedBasePrice %> &times; <%= pricing.nights %> <%= pricing.nights === 1 ? "night" : "nights" %>
+                  </span>
+                  <span id="reviewPricingSubtotal" class="fw-medium">&#8377; <%= pricing.formattedSubtotal %></span>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span id="reviewPricingTaxLabel" class="text-muted">
+                    <%= pricing.taxLabel %> (<%= pricing.taxRatePercent %>%)
+                  </span>
+                  <span id="reviewPricingTaxAmount" class="fw-medium">&#8377; <%= pricing.formattedTaxAmount %></span>
+                </div>
+                <hr class="my-2" />
+                <div class="d-flex justify-content-between align-items-baseline fs-6">
+                  <strong class="text-dark">Total (INR)</strong>
+                  <strong id="reviewPricingTotal" class="text-dark">&#8377; <%= pricing.formattedEstimatedTotal %></strong>
+                </div>
+              </div>
+              <p class="small text-muted mb-0 mt-3 pt-2 border-top" style="font-size: 0.78rem;">
+                Final availability, guest capacity, and pricing snapshot are recalculated and locked inside a MongoDB transaction upon submission.
+              </p>
+            <% } else { %>
+              <p class="small text-muted mb-0">Price breakdown unavailable.</p>
+            <% } %>
+          </aside>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="/js/bookingReview.js"></script>
+

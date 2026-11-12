@@ -4,8 +4,26 @@ const {
   reviewSchema,
   signupSchema,
   profileUpdateSchema,
+  bookingSchema,
 } = require("../schema.js");
 const { cleanupFileIfUncommitted } = require("../utils/cloudinaryCleanup.js");
+
+function isPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function isStrictScalarOrUndefined(value) {
+  return (
+    value === undefined ||
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number"
+  );
+}
 
 async function validateListing(req, res, next) {
   const listing = req.body?.listing;
@@ -69,11 +87,70 @@ function validateProfileUpdate(req, res, next) {
   next();
 }
 
+function validateBooking(req, res, next) {
+  const listingId = req.params?.id;
+  if (typeof listingId !== "string" || !/^[0-9a-fA-F]{24}$/.test(listingId)) {
+    return next(new ExpressError(400, "Invalid Listing ID"));
+  }
+
+  if (req.body !== undefined && req.body !== null && !isPlainObject(req.body)) {
+    return next(new ExpressError(400, "Invalid booking request payload."));
+  }
+
+  const body = req.body || {};
+  let source = body;
+  if (Object.prototype.hasOwnProperty.call(body, "booking")) {
+    if (!isPlainObject(body.booking)) {
+      return next(new ExpressError(400, "Invalid booking payload."));
+    }
+    source = body.booking;
+  }
+
+  if (
+    !isStrictScalarOrUndefined(source.checkIn) ||
+    !isStrictScalarOrUndefined(source.checkOut) ||
+    !isStrictScalarOrUndefined(source.guests)
+  ) {
+    return next(new ExpressError(400, "Invalid booking input format."));
+  }
+
+  const sanitizedInput = {
+    checkIn:
+      source.checkIn === undefined || source.checkIn === null
+        ? ""
+        : String(source.checkIn).trim(),
+    checkOut:
+      source.checkOut === undefined || source.checkOut === null
+        ? ""
+        : String(source.checkOut).trim(),
+    guests:
+      source.guests === undefined || source.guests === null
+        ? ""
+        : String(source.guests).trim(),
+  };
+
+  const { error, value } = bookingSchema.validate(sanitizedInput);
+  if (error) {
+    req.validatedBooking = sanitizedInput;
+    req.bookingValidationError = error.details[0].message;
+    return next();
+  }
+
+  req.validatedBooking = {
+    checkIn: value.checkIn,
+    checkOut: value.checkOut,
+    guests: value.guests,
+  };
+  req.bookingValidationError = null;
+  return next();
+}
+
 module.exports = {
   validateListing,
   validateReview,
   validateSignup,
   validateLogin,
   validateProfileUpdate,
+  validateBooking,
 };
 

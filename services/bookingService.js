@@ -14,6 +14,7 @@ const {
   formatCalendarDate,
   normalizeStayDates,
 } = require("../utils/bookingDates.js");
+const { resolveCategoryMeta } = require("../utils/listingOptions.js");
 
 const {
   BOOKING_STATUSES,
@@ -32,6 +33,7 @@ const ALLOWED_CREATE_OPTIONS = new Set([
   "now",
   "maxRetries",
 ]);
+const ALLOWED_REVIEW_OPTIONS = new Set(["actorId", "taxConfig", "now"]);
 const ALLOWED_AVAILABILITY_OPTIONS = new Set([
   "session",
   "excludeBookingId",
@@ -55,7 +57,7 @@ const ALLOWED_HOST_TARGET_STATUSES = new Set([
 ]);
 const MAX_CANCELLATION_REASON_LENGTH = 300;
 const PAYMENT_UNSUPPORTED_NOTICE =
-  "Reservation request only — online payment processing is not enabled.";
+  "Payment has not been collected. This reservation is not a paid booking.";
 
 function isPlainObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -903,10 +905,150 @@ async function updateBookingStatus(
   }, resolvedOpts.maxRetries);
 }
 
+function readOptionalReviewScalar(rawQuery, key, label) {
+  if (!rawQuery || !Object.prototype.hasOwnProperty.call(rawQuery, key)) {
+    return "";
+  }
+  const value = rawQuery[key];
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value !== "string" && typeof value !== "number") {
+    throw new ExpressError(400, `Invalid ${label}`);
+  }
+  return String(value).trim();
+}
+
+async function getBookingReviewDetails(listingId, rawQuery = {}, options = {}) {
+  validateObjectId(listingId, "Listing ID");
+  if (rawQuery !== undefined && rawQuery !== null && !isPlainObject(rawQuery)) {
+    throw new ExpressError(400, "Invalid booking review query parameters.");
+  }
+  const resolvedOpts = validateOptions(
+    options,
+    ALLOWED_REVIEW_OPTIONS,
+    "booking review options"
+  );
+  if (resolvedOpts.actorId !== undefined) {
+    validateObjectId(resolvedOpts.actorId, "User ID");
+  }
+
+  const safeQuery = rawQuery || {};
+  const checkInInput = readOptionalReviewScalar(
+    safeQuery,
+    "checkIn",
+    "check-in date"
+  );
+  const checkOutInput = readOptionalReviewScalar(
+    safeQuery,
+    "checkOut",
+    "check-out date"
+  );
+  const guestsInput = readOptionalReviewScalar(
+    safeQuery,
+    "guests",
+    "guest count"
+  );
+
+  const listing = await Listing.findById(listingId).populate(
+    "owner",
+    "username displayName location"
+  );
+  if (!listing) {
+    throw new ExpressError(404, "Listing Not Found ❌");
+  }
+
+  const taxConfig = resolveTaxConfig(resolvedOpts.taxConfig || env.pricing);
+  const maxGuests = resolveListingMaxGuests(listing);
+  const todayStr = formatCalendarDate(getTodayUtcMidnight(resolvedOpts.now));
+  const blockedDates = await getListingBlockedDates(listing._id, {
+    now: resolvedOpts.now,
+  });
+  const isOwnListing = Boolean(
+    resolvedOpts.actorId &&
+      listing.owner &&
+      String(listing.owner._id || listing.owner) === String(resolvedOpts.actorId)
+  );
+  const isPriceAvailable = isValidNonNegativePrice(listing.price);
+  const categoryMeta = resolveCategoryMeta(listing.category);
+
+  let availability = null;
+  let reviewError = "";
+  let pricing = calculatePriceBreakdown({
+    nightlyPrice: listing.price,
+    nights: 1,
+    taxConfig,
+  });
+
+  const hasDateInput = Boolean(checkInInput || checkOutInput);
+  if (hasDateInput) {
+    try {
+      const requestedGuests = guestsInput ? parseGuestCount(guestsInput) : 1;
+      if (requestedGuests > maxGuests) {
+        throw new ExpressError(
+          400,
+          `Guest count cannot exceed the listing capacity of ${maxGuests}.`
+        );
+      }
+      if (!checkInInput || !checkOutInput) {
+        throw new ExpressError(
+          400,
+          "Both check-in and check-out dates are required."
+        );
+      }
+
+      availability = await checkAvailability(
+        listing._id,
+        checkInInput,
+        checkOutInput,
+        {
+          now: resolvedOpts.now,
+          maxStayNights: taxConfig.maxStayNights,
+        }
+      );
+
+      pricing = calculatePriceBreakdown({
+        nightlyPrice: listing.price,
+        nights: availability.nights,
+        taxConfig,
+      });
+
+      if (!availability.available) {
+        reviewError =
+          "Selected dates overlap an existing active reservation. Please select another date range.";
+      }
+    } catch (err) {
+      reviewError = err?.message || "Please enter valid booking dates and guest count.";
+    }
+  }
+
+  return {
+    listing,
+    categoryMeta,
+    maxGuests,
+    maxStayNights: taxConfig.maxStayNights,
+    todayStr,
+    blockedDates,
+    formValues: {
+      checkIn: checkInInput,
+      checkOut: checkOutInput,
+      guests: guestsInput || "1",
+    },
+    availability,
+    pricing,
+    taxConfig,
+    reviewError,
+    isOwnListing,
+    isPriceAvailable,
+    paymentNotice: PAYMENT_UNSUPPORTED_NOTICE,
+  };
+}
+
 module.exports = {
   BOOKING_STATUSES,
   ACTIVE_BOOKING_STATUSES,
   TERMINAL_BOOKING_STATUSES,
+  PAYMENT_UNSUPPORTED_NOTICE,
   validateObjectId,
   parseGuestCount,
   resolveListingMaxGuests,
@@ -915,6 +1057,7 @@ module.exports = {
   checkAvailability,
   getListingBlockedDates,
   hasUpcomingActiveBookings,
+  getBookingReviewDetails,
   createBooking,
   findBookingById,
   getGuestBookings,

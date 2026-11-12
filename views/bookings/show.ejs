@@ -1,0 +1,193 @@
+<% layout("/layout/boilerplate") %>
+<%
+  const b = booking || {};
+  const liveListing = b.listing || null;
+  const snap = b.listingSnapshot || {};
+  const title = liveListing?.title || snap.title || "Reserved Listing";
+  const location = liveListing?.location || snap.location || "";
+  const country = liveListing?.country || snap.country || "";
+  const imageUrl =
+    (liveListing?.image?.url && String(liveListing.image.url).trim()) ||
+    (snap.imageUrl && String(snap.imageUrl).trim()) ||
+    "";
+  const pricing = b.pricing || {};
+  const guestUsername = b.guest?.username || "Guest";
+  const guestDisplayName = b.guest?.displayName || "";
+  const guestLocation = b.guest?.location || "";
+  const hostUsername = b.host?.username || "Host";
+  const hostDisplayName = b.host?.displayName || "";
+  const resolvedRole = typeof viewerRole === "string" ? viewerRole : "guest";
+  const noticeText =
+    (typeof paymentNotice === "string" && paymentNotice) ||
+    "Payment has not been collected. This reservation is not a paid booking.";
+
+  let statusBadgeClass = "text-bg-warning";
+  if (b.status === "confirmed") statusBadgeClass = "text-bg-success";
+  else if (b.status === "cancelled") statusBadgeClass = "text-bg-danger";
+  else if (b.status === "completed") statusBadgeClass = "text-bg-secondary";
+%>
+
+<div class="container px-0 my-4">
+  <div class="row justify-content-center">
+    <div class="col-12 col-xl-9">
+
+      <div class="account-card p-3 p-md-4 mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 pb-3 mb-3 border-bottom">
+          <div>
+            <span class="badge <%= statusBadgeClass %> text-uppercase mb-2"><%= b.status || "pending" %></span>
+            <h1 class="h3 fw-bold mb-1">Reservation Confirmation</h1>
+            <p class="small text-muted mb-0">
+              Booking Reference: <strong class="text-dark"><%= b.bookingReference %></strong>
+              <% if (createdAtFormatted) { %>
+                &middot; Created on <span><%= createdAtFormatted %></span>
+              <% } %>
+            </p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <% if (liveListing && liveListing._id) { %>
+              <a href="/listings/<%= liveListing._id %>" class="btn btn-outline-dark btn-sm">View Listing</a>
+            <% } %>
+            <a href="/dashboard" class="btn btn-dark btn-sm">Dashboard</a>
+          </div>
+        </div>
+
+        <div class="alert alert-info py-2 px-3 small mb-4" role="note">
+          <i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
+          <strong>Payment Notice:</strong> Payment has not been collected. This reservation is not a paid booking.
+        </div>
+
+        <div class="row g-4 align-items-start">
+          <!-- Property & Stay Details -->
+          <div class="col-12 col-md-7">
+            <div class="mb-3">
+              <% if (imageUrl) { %>
+                <img src="<%= imageUrl %>" alt="<%= title %>" class="dashboard-thumb mb-3" />
+              <% } else { %>
+                <div class="dashboard-thumb-fallback mb-3">
+                  <span class="small">No property image available</span>
+                </div>
+              <% } %>
+
+              <h2 class="h5 fw-bold mb-1">
+                <% if (liveListing && liveListing._id) { %>
+                  <a href="/listings/<%= liveListing._id %>" class="text-decoration-none text-dark"><%= title %></a>
+                <% } else { %>
+                  <%= title %>
+                <% } %>
+              </h2>
+              <% if (location || country) { %>
+                <p class="small text-muted mb-0">
+                  <i class="fa-solid fa-location-dot text-danger me-1" aria-hidden="true"></i>
+                  <%= location %><% if (location && country) { %>, <% } %><%= country %>
+                </p>
+              <% } %>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <div class="border rounded-3 p-3 bg-light h-100">
+                  <span class="small text-muted d-block">Check-in</span>
+                  <strong class="d-block"><%= checkInFormatted || checkInIso %></strong>
+                  <span class="small text-muted"><%= checkInIso %></span>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="border rounded-3 p-3 bg-light h-100">
+                  <span class="small text-muted d-block">Check-out</span>
+                  <strong class="d-block"><%= checkOutFormatted || checkOutIso %></strong>
+                  <span class="small text-muted"><%= checkOutIso %></span>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="border rounded-3 p-3 bg-light h-100">
+                  <span class="small text-muted d-block">Duration</span>
+                  <strong><%= pricing.nights %> <%= pricing.nights === 1 ? "night" : "nights" %></strong>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="border rounded-3 p-3 bg-light h-100">
+                  <span class="small text-muted d-block">Guests</span>
+                  <strong><%= b.guests %> <%= b.guests === 1 ? "guest" : "guests" %></strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="border rounded-3 p-3 bg-light">
+              <h3 class="h6 fw-semibold mb-2">Reservation Participants</h3>
+              <div class="small d-flex flex-column gap-1">
+                <div>
+                  <span class="text-muted">Guest:</span>
+                  <strong>@<%= guestUsername %></strong>
+                  <% if (guestDisplayName) { %>
+                    <span>(<%= guestDisplayName %>)</span>
+                  <% } %>
+                  <% if (resolvedRole === "guest") { %>
+                    <span class="badge text-bg-light border ms-1">You</span>
+                  <% } %>
+                  <% if (resolvedRole === "host" && guestLocation) { %>
+                    <span class="text-muted">&middot; <%= guestLocation %></span>
+                  <% } %>
+                </div>
+                <div>
+                  <span class="text-muted">Host:</span>
+                  <strong>@<%= hostUsername %></strong>
+                  <% if (hostDisplayName) { %>
+                    <span>(<%= hostDisplayName %>)</span>
+                  <% } %>
+                  <% if (resolvedRole === "host") { %>
+                    <span class="badge text-bg-light border ms-1">You</span>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Frozen Server-Calculated Pricing Breakdown -->
+          <div class="col-12 col-md-5">
+            <div class="border rounded-4 p-3 p-md-4 bg-white">
+              <h3 class="h6 fw-semibold border-bottom pb-2 mb-3">Pricing Breakdown</h3>
+              <div class="d-flex flex-column gap-2 small">
+                <div class="d-flex justify-content-between">
+                  <span class="text-muted">Nightly price</span>
+                  <span>&#8377; <%= formatINR(pricing.nightlyPrice) %></span>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span class="text-muted">
+                    &#8377; <%= formatINR(pricing.nightlyPrice) %> &times; <%= pricing.nights %> <%= pricing.nights === 1 ? "night" : "nights" %>
+                  </span>
+                  <span>&#8377; <%= formatINR(pricing.subtotal) %></span>
+                </div>
+                <div class="d-flex justify-content-between">
+                  <span class="text-muted">
+                    <%= pricing.taxLabel || "Estimated GST" %> (<%= pricing.taxRatePercent ?? 0 %>%)
+                  </span>
+                  <span>&#8377; <%= formatINR(pricing.taxAmount || 0) %></span>
+                </div>
+                <% if (pricing.taxDescription) { %>
+                  <div class="text-muted" style="font-size: 0.78rem;"><%= pricing.taxDescription %></div>
+                <% } %>
+                <hr class="my-2" />
+                <div class="d-flex justify-content-between align-items-baseline fs-6">
+                  <strong class="text-dark">Final Total</strong>
+                  <strong class="text-dark">&#8377; <%= formatINR(pricing.totalPrice) %> <%= pricing.currency || "INR" %></strong>
+                </div>
+              </div>
+              <p class="small text-muted mb-0 mt-3 pt-2 border-top" style="font-size: 0.78rem;">
+                <%= noticeText %> Totals are locked as a booking-time pricing snapshot and do not change if the listing's nightly rate updates later.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <a href="/listings" class="btn btn-outline-secondary btn-sm">Explore More Listings</a>
+        <% if (liveListing && liveListing._id) { %>
+          <a href="/listings/<%= liveListing._id %>" class="btn btn-outline-dark btn-sm">Return to Listing</a>
+        <% } %>
+      </div>
+
+    </div>
+  </div>
+</div>
+

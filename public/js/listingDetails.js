@@ -147,6 +147,22 @@
   const availBtn = document.getElementById("checkAvailabilityBtn");
   const availFeedbackEl = document.getElementById("availabilityFeedback");
   const blockedContainerEl = document.getElementById("blockedDatesContainer");
+  const proceedToBookForm = document.getElementById("proceedToBookForm");
+  const bookFlowCheckIn = document.getElementById("bookFlowCheckIn");
+  const bookFlowCheckOut = document.getElementById("bookFlowCheckOut");
+  const bookFlowGuests = document.getElementById("bookFlowGuests");
+
+  function syncProceedToBookInputs() {
+    if (bookFlowCheckIn && checkInEl) {
+      bookFlowCheckIn.value = String(checkInEl.value || "").trim();
+    }
+    if (bookFlowCheckOut && checkOutEl) {
+      bookFlowCheckOut.value = String(checkOutEl.value || "").trim();
+    }
+    if (bookFlowGuests && guestsEl) {
+      bookFlowGuests.value = String(guestsEl.value || "1").trim() || "1";
+    }
+  }
 
   if (
     !availData ||
@@ -347,9 +363,11 @@
   }
 
   syncMinCheckOut();
+  syncProceedToBookInputs();
 
   checkInEl.addEventListener("change", () => {
     syncMinCheckOut();
+    syncProceedToBookInputs();
     if (checkOutEl.value) {
       const check = validateClientInputs();
       if (!check.valid) {
@@ -366,6 +384,7 @@
   });
 
   checkOutEl.addEventListener("change", () => {
+    syncProceedToBookInputs();
     const check = validateClientInputs();
     if (!check.valid) {
       setFeedback("danger", check.message);
@@ -380,6 +399,7 @@
   });
 
   guestsEl.addEventListener("input", () => {
+    syncProceedToBookInputs();
     clearInvalidMarkers();
     const raw = String(guestsEl.value || "").trim();
     if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > maxGuests) {
@@ -389,6 +409,12 @@
       setFeedback("", "");
     }
   });
+
+  if (proceedToBookForm) {
+    proceedToBookForm.addEventListener("submit", () => {
+      syncProceedToBookInputs();
+    });
+  }
 
   availForm.addEventListener("submit", async (event) => {
     const check = validateClientInputs();

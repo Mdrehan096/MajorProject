@@ -34,3 +34,9 @@ module.exports.profileUpdateSchema = Joi.object({
   bio: Joi.string().trim().max(500).allow("").optional(),
   location: Joi.string().trim().max(100).allow("").optional(),
 });
+
+module.exports.bookingSchema = Joi.object({
+  checkIn: Joi.string().trim().required(),
+  checkOut: Joi.string().trim().required(),
+  guests: Joi.number().integer().min(1).max(50).required(),
+});
